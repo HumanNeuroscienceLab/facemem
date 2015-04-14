@@ -1,0 +1,52 @@
+subid tbnum version
+sub01 tb9253 1
+sub02 tb9226 1
+sub03 tb9276 1
+sub05 tb9325 2
+sub06 tb9360 2
+sub08 tb9399 2
+sub09 tb9340 2
+sub11 tbX 1
+sub12 tbx 1
+sub13 tbX 1
+sub14 tbX 2
+sub15 tbX 2
+sub16 tbX 2
+sub17 tbX 1
+sub18 tbX 1
+sub19 tbX 2
+
+
+ Oct  5  2014 tb9226
+ Oct 24 21:05 tb9253
+ Jul 22  2014 tb9276
+ Jul 31  2014 tb9325
+ Aug  7  2014 tb9360
+ Aug 14  2014 tb9399
+ Aug 22  2014 tb9430
+ Sep  5  2014 tb9488
+ Sep 12  2014 tb9516
+ Sep 18  2014 tb9555
+ Sep 26  2014 tb9585
+ Sep 26  2014 tb9586
+ Oct  7  2014 tb9621
+ Oct 10  2014 tb9645
+ Oct 23 17:33 tb9699
+ Oct 31 11:08 tb9737
+ 
+ Jul 10  2014 ../../../data/raw/tb9226
+ Jul 16  2014 ../../../data/raw/tb9253
+ Jul 22  2014 ../../../data/raw/tb9276
+ Jul 31  2014 ../../../data/raw/tb9325
+ Aug  7  2014 ../../../data/raw/tb9360
+ Aug 14  2014 ../../../data/raw/tb9399
+ Aug 22  2014 ../../../data/raw/tb9430
+ Sep  5  2014 ../../../data/raw/tb9488
+ Sep 12  2014 ../../../data/raw/tb9516
+ Sep 18  2014 ../../../data/raw/tb9555
+ Sep 26  2014 ../../../data/raw/tb9585
+ Sep 26  2014 ../../../data/raw/tb9586
+ Oct  3  2014 ../../../data/raw/tb9621
+ Oct 10  2014 ../../../data/raw/tb9645
+ Oct 23 16:13 ../../../data/raw/tb9699
+ Oct 31 09:46 ../../../data/raw/tb9737

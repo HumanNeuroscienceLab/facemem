@@ -1,0 +1,11 @@
+
+./21_group_task_worker.bash --subfile=../sublist_all.txt --runtype=Questions --model=spmg1 --njobs=12
+PWD = /data/psych/faceMemoryMRI/scripts/connpaper/20_task
+date: Fri Feb 20 09:15:53 EST 2015
+ 
+ OPTIONS
+ - subjects: tb9226 tb9253 tb9276 tb9325 tb9360 tb9399 tb9430 tb9488 tb9516 tb9555 tb9585 tb9586 tb9621 tb9645 tb9699 tb9737
+ - runtype: Questions
+ - space: standard
+ - model: spmg1
+ - njobs: 12

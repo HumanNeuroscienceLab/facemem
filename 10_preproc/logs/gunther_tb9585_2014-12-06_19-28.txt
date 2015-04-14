@@ -1,0 +1,10 @@
+
+./gunther_worker_fix_standard.bash --subject=tb9585 --nthreads=3
+PWD = /mnt/nfs/psych/faceMemoryMRI/scripts/connpaper/10_preproc
+date: Sat Dec  6 19:28:56 EST 2014
+ 
+ OPTIONS
+ - subject: tb9585
+ - njobs: 
+ - nthreads: 3
+ END: Sun Dec  7 00:58:20 EST 2014

@@ -1,0 +1,21 @@
+createbrainmask
+overwrite
+querylanguage event
+forcetr 1
+
+ptsbefore 3
+ptsafter 16
+
+basestartoffset -3
+baseendoffset -1
+
+querylabel bio
+query "condition('bio')"
+
+querylabel phys
+query "condition('phys')"
+
+tcompare bio-phys
+tcompare phys-bio
+
+
