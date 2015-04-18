@@ -1,0 +1,17 @@
+subid tbnum version
+sub01 tb9253 1
+sub02 tb9226 1
+sub03 tb9276 1
+sub05 tb9325 2
+sub06 tb9360 2
+sub08 tb9399 2
+sub09 tb9430 2
+sub11 tb9488 1
+sub12 tb9516 1
+sub13 tb9555 1
+sub14 tb9585 2
+sub15 tb9586 2
+sub16 tb9621 2
+sub17 tb9645 1
+sub18 tb9699 1
+sub19 tb9737 2
