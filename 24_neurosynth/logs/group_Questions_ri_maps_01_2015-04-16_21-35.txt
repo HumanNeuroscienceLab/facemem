@@ -1,0 +1,12 @@
+
+./22_group_task_worker.bash --subfile=../sublist_all.txt --runtype=Questions --region=ri_maps_01 --njobs=12
+PWD = /mnt/nfs/psych/faceMemoryMRI/scripts/connpaper/24_neurosynth
+date: Thu Apr 16 21:35:52 EDT 2015
+ 
+ OPTIONS
+ - subjects: tb9226 tb9253 tb9276 tb9325 tb9360 tb9399 tb9430 tb9488 tb9516 tb9555 tb9585 tb9586 tb9621 tb9645 tb9699 tb9737
+ - runtype: Questions
+ - region: ri_maps_01
+ - njobs: 12
+ - vox thresh: 1.96
+ - clust thresh: 0.05
