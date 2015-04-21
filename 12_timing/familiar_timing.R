@@ -39,7 +39,7 @@ l_ply(levels(behav$tb), function(tbnum) {
   afnidat <- dlply(merged, .(remember), function(x) {
     # should actually have a for loop -> if nothing with that run, then '***'
     llply(1:4, function(ri) {
-      xx <- filter(x, run==ri)
+      xx <- filter(x, run==ri & onset>=0)
       if (nrow(xx) == 0) {
         return(NULL)
       } else {
@@ -52,14 +52,19 @@ l_ply(levels(behav$tb), function(tbnum) {
   #cat("", file=ofile, sep="", append=F)
   l_ply(1:length(afnidat), function(i) {
     cat("Remember?", names(afnidat)[i], "\n")
+
+    ofile <- sprintf("data/timing/familiarity_%s_rem-%s.1D", tbnum, names(afnidat)[i])
+    cat("", file=ofile, sep="", append=F)
+    
     remdat <- afnidat[[i]]
     l_ply(remdat, function(rundat) {
       if (is.null(rundat)) {
         cat("***", "\n")
+        cat("***", "\n", file=ofile, append=T)
       } else {
         cat(rundat, "\n")
+        cat(rundat, "\n", file=ofile, append=T)
       }
-      #cat(rundat, "\n", file=ofile, append=T)
     })
   })
   
