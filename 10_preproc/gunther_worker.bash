@@ -92,32 +92,53 @@ qadir="${basedir}/data/qa"
 #  --dxyz 2.5 --threads ${nthreads}
 
 ## Functionals
-echo
-echo "localizer"
-preproc_func.rb -i ${datadir}/${subject}/${subject}_FaceMemory01_FaceLoc_run*.nii.gz \
-  --subject ${subject} --sd ${subdir} --qadir ${qadir} \
-  --name Localizer --tr 1 \
-  --fwhm 5 \
-  --hp 200 \
-  --threads ${nthreads} --overwrite
+#echo
+#echo "localizer"
+#preproc_func.rb -i ${datadir}/${subject}/${subject}_FaceMemory01_FaceLoc_run*.nii.gz \
+#  --subject ${subject} --sd ${subdir} --qadir ${qadir} \
+#  --name Localizer --tr 1 \
+#  --fwhm 5 \
+#  --hp 200 \
+#  --threads ${nthreads} --overwrite
+#
+#echo
+#echo "questions"
+#preproc_func.rb -i ${datadir}/${subject}/${subject}_FaceMemory01_withQ_run*.nii.gz \
+#  --subject ${subject} --sd ${subdir} --qadir ${qadir} \
+#  --name Questions --tr 1 \
+#  --fwhm 5 \
+#  --hp 200 \
+#  --threads ${nthreads} --overwrite
+#
+#echo
+#echo "no-questions"
+#preproc_func.rb -i ${datadir}/${subject}/${subject}_FaceMemory01_noQ_run*.nii.gz \
+#  --subject ${subject} --sd ${subdir} --qadir ${qadir} \
+#  --name NoQuestions --tr 1 \
+#  --fwhm 5 \
+#  --hp 200 \
+#  --threads ${nthreads} --overwrite
 
-echo
-echo "questions"
+echo "compcor for questions"
+rm -r ${subdir}/${subject}/Questions/preproc/compcor
 preproc_func.rb -i ${datadir}/${subject}/${subject}_FaceMemory01_withQ_run*.nii.gz \
   --subject ${subject} --sd ${subdir} --qadir ${qadir} \
   --name Questions --tr 1 \
   --fwhm 5 \
   --hp 200 \
+  --do compcor \
   --threads ${nthreads} --overwrite
 
-echo
-echo "no-questions"
+echo "compcor for noquestions"
+rm -r ${subdir}/${subject}/NoQuestions/preproc/compcor
 preproc_func.rb -i ${datadir}/${subject}/${subject}_FaceMemory01_noQ_run*.nii.gz \
   --subject ${subject} --sd ${subdir} --qadir ${qadir} \
   --name NoQuestions --tr 1 \
   --fwhm 5 \
   --hp 200 \
+  --do compcor \
   --threads ${nthreads} --overwrite
+
 
 ## FIX FUNCS TO HAVE 5mm smoothing
 #echo

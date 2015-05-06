@@ -1,0 +1,86 @@
+#!/usr/bin/env Rscript
+
+###
+# SETUP
+
+suppressMessages(library(bigmemory))
+suppressMessages(library(biganalytics))
+suppressMessages(library(niftir))
+
+base    <- "/mnt/nfs/psych/faceMemoryMRI"
+glmdir  <- file.path(base, "analysis/groups/Questions/sbca/beta_series_3mm_nocompcor.glm")
+sumdir  <- file.path(glmdir, "summarize")
+if (!file.exists(sumdir)) dir.create(sumdir)
+
+###
+# Contrasts, Masks, Etc
+# Load them
+
+contab  <- read.table(file.path(glmdir, "model_contrasts.txt"))
+cons    <- rownames(contab)
+
+mask    <- read.mask(file.path(glmdir, "mask.nii.gz"))
+hdr     <- read.nifti.header(file.path(glmdir, "mask.nii.gz"))
+
+nsubs   <- 16
+thr     <- qt(0.05/2, nsubs-1, lower.tail=F)
+
+
+###
+# Summarize Tvals
+
+## proportion of significant results
+for (i in 1:2) {
+  cat("contrast:", cons[i], "\n")
+  
+  tmats   <- attach.big.matrix(file.path(glmdir, sprintf("tvals_%02i.desc", 1)))
+  propsig <- vector("numeric", ncol(tmats))
+  
+  # to save some memory, we will split this operation up
+  col <- niftir.split.indices(1, ncol(tmats), length.out=12)
+  for (j in 1:col$n) {
+    cat(sprintf("- %i/%i\n", j, col$n))
+    
+    inds <- col$starts[j]:col$ends[j]
+    if (i == 1) {
+      propsig[inds] <- colMeans(tmats[,inds]>thr)
+    } else {
+      propsig[inds] <- colMeans(tmats[,inds]<(-thr))
+    }
+    
+    invisible(gc(F,T))
+  }
+  
+  # save
+  ofile <- file.path(sumdir, sprintf("prop_tvals_%02i_%s.nii.gz", i, cons[i]))
+  write.nifti(propsig, hdr, mask, outfile=ofile, overwrite=T)
+  
+  rm(tmats)
+  invisible(gc(F,T))
+}
+
+# mean absolute t-values (only need 1 direction?)
+for (i in c(1)) {
+  cat("contrast:", cons[i], "\n")
+  
+  tmats   <- attach.big.matrix(file.path(glmdir, sprintf("tvals_%02i.desc", i)))
+  tmeans  <- vector("numeric", ncol(tmats))
+  
+  # to save some memory, we will split this operation up
+  col <- niftir.split.indices(1, ncol(tmats), length.out=12)
+  for (j in 1:col$n) {
+    cat(sprintf("- %i/%i\n", j, col$n))
+    
+    inds <- col$starts[j]:col$ends[j]
+    tmeans[inds] <- colMeans(abs(tmats[,inds]))
+    
+    invisible(gc(F,T))
+  }
+    
+  # save
+  ofile <- file.path(sumdir, sprintf("mean_tvals_%s.nii.gz", cons[i]))
+  write.nifti(tmeans, hdr, mask, outfile=ofile, overwrite=T)
+  
+  rm(tmats)
+  invisible(gc(F,T))
+}

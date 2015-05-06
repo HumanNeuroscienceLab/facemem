@@ -6,8 +6,14 @@
 # RUN ALL THE SUBJECTS
 subjs=( $( cat ../sublist_all.txt ) )
 #subjs=( tb9253 tb9325 tb9360 tb9399 )
-nthreads=4
-njobs=8
+#nthreads=4
+#njobs=8
+#
+#parallel --no-notice -j $njobs --eta \
+#  ./gunther_worker.bash --subject={} --nthreads=${nthreads} ::: ${subjs[@]}
+
+nthreads=2
+njobs=16
 
 parallel --no-notice -j $njobs --eta \
   ./gunther_worker.bash --subject={} --nthreads=${nthreads} ::: ${subjs[@]}

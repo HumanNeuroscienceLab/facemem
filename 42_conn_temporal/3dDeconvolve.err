@@ -1,0 +1,3 @@
+*+ WARNING: Input polort=0; Longest run=293.0 s; Recommended minimum polort=2
+*+ WARNING: '-stim_times 1' file '/mnt/nfs/psych/faceMemoryMRI/scripts/timing/allruns_faceMemory01_tb9226_Questions_bio' has 4 rows, but dataset has 3 time blocks
+*+ WARNING: '-stim_times 2' file '/mnt/nfs/psych/faceMemoryMRI/scripts/timing/allruns_faceMemory01_tb9226_Questions_phys' has 4 rows, but dataset has 3 time blocks

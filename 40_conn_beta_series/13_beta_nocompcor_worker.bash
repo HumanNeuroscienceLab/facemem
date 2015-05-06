@@ -22,26 +22,26 @@ model="SPMG1(4)"
 base=/mnt/nfs/psych/faceMemoryMRI/analysis/subjects
 sdir=${base}/${subject}/${runtype}
 tdir="/mnt/nfs/psych/faceMemoryMRI/scripts/timing"
-
+stddir="/mnt/nfs/share/fsl/current/data/standard"
 
 #--- RUN ---#
 
 mkdir ${sdir}/task 2> /dev/null
-rm -rf ${sdir}/task/smoother_preproc_spmg1.reml
+rm -rf ${sdir}/task/beta_series_spmg1_nocompcor.reml
 
-task_analysis.rb -i ${sdir}/preproc/filtered_func_run*.nii.gz \
+# now run bs
+beta_series.rb -i ${sdir}/preproc/filtered_func_run*.nii.gz \
   -m ${sdir}/mask.nii.gz \
   -b ${sdir}/mean_func.nii.gz \
-  --output ${sdir}/task/smoother_preproc_spmg1.reml \
+  --output ${sdir}/task/beta_series_spmg1_nocompcor.reml \
   --tr 1 \
   --polort 0 \
-  --oresiduals \
   --motion ${sdir}/motion.1D \
   --stim bio ${tdir}/allruns_faceMemory01_${subject}_${runtype}_bio "${model}" \
   --stim phys ${tdir}/allruns_faceMemory01_${subject}_${runtype}_phys "${model}" \
-  --glt bio_gt_phys 'SYM: +bio -phys' \
-  --glt phys_gt_bio 'SYM: -bio +phys' \
   --regdir ${sdir}/reg \
+  --master ${stddir}/MNI152_T1_3mm_brain.nii.gz \
   --threads ${nthreads} #--overwrite
 
-#  --covars compcor ${sdir}/compcor.1D \
+# TODO:
+# - add vthr and cthr options

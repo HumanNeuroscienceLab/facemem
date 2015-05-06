@@ -1,0 +1,14 @@
+/ContrastName1	face+ 
+/ContrastName2	scene+ 
+/ContrastName3	face_gt_scene 
+/ContrastName4	scene_gt_face 
+/NumWaves	2
+/NumContrasts	4
+/PPheights		1.000000e+00	0.000000e+00	1.000000e+00	1.000000e+00
+/RequiredEffect		0.378	-nan	0.378	0.378
+
+/Matrix
+1.000000e+00 0.000000e+00 
+0.000000e+00 1.000000e+00 
+1.000000e+00 -1.000000e+00 
+-1.000000e+00 1.000000e+00 
