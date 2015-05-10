@@ -22,7 +22,7 @@ subjects <- sub("_Questions_timing.txt", "",
                 list.files("~/Dropbox/Research/facemem/data/ts", 
                            pattern="_Questions_timing.txt"))
 runtypes <- c("Questions", "NoQuestions")
-rois     <- c("postask", "probatlas")
+rois     <- c("postask", "probatlas", "overlap")
 
 #' # Selecting the relevant nodes for each ROI set
 #' 
@@ -58,16 +58,14 @@ srois3 <- c(
   31,  # L fOp/Ins
   25,  # R fOp/Ins
   8,   # L fOrb
-  30,  # R fOrb
-  14,  # L tpole
-  28,  # R tpole
-  19   # brainstem
+  30  # R fOrb
 )
 snames3 <- c("R vATL", "L PHC", "L RSC", "R RSC", 
              "L dACC", "R dACC", "B midCC", "L fOp/Ins", "R fOp/Ins", 
-             "L fOrb", "R fOrb", "L tpole", "R tpole", "bstem")
+             "L fOrb", "R fOrb")
 srois   <- list(postask=srois1, probatlas=srois2, overlap=srois3)
-snames  <- list(postask=snames1, probatlas=snames2, overlap=snames)
+snames  <- list(postask=snames1, probatlas=snames2, overlap=snames3)
+
 
 #' # Load the Data
 #' 
@@ -79,16 +77,16 @@ snames  <- list(postask=snames1, probatlas=snames2, overlap=snames)
 #' 
 #+ load
 orig_rois <- rois
-rois      <- "probatlas"
+rois      <- "overlap"
 all.df <- ldply(rois, function(roi) {
   ldply(runtypes, function(runtype) {
     ldply(subjects, function(subject) {
       # Load the data
       # ret <- list(trial=matrix(trial x time x region), timing, ntpts)
       lst.dat <- load.data(subject, runtype, roi, 
-                basedir="~/Dropbox/Research/facemem/data/ts", 
-                prestim=5, poststim=19, 
-                select.nodes=srois[[roi]], node.names=snames[[roi]])   
+                           basedir="~/Dropbox/Research/facemem/data/ts", 
+                           prestim=5, poststim=19, 
+                           select.nodes=srois[[roi]], node.names=snames[[roi]])   
       
       # Remove the baseline
       lst.dat <- remove.baseline(lst.dat, baseline.tpts=-3:-1)
@@ -134,7 +132,7 @@ all.diff.df <- ddply(all.df, .(roi.set, runtype, region, tpts), function(x) {
   agree <- max(table(sign(diff)))/length(diff)
   c(diff=as.numeric(res$estimate), tval=res$statistic, pval=res$p.value, agree=agree)
 })
-  
+
 #' # Load and Visualize
 #' 
 #+ viz_setup
@@ -165,37 +163,37 @@ fte_theme <- function() {
   # Begin construction of chart
   theme_bw() +
     
-  # Set the entire chart region to a light gray color
-  theme(panel.background=element_rect(fill=color.background, color=color.background)) +
-  theme(plot.background=element_rect(fill=color.background, color=color.background)) +
-  theme(panel.border=element_rect(color=color.background)) +
-  
-  # Format the grid
-  theme(panel.grid.major=element_line(color=color.grid.major,size=.75)) +
-  theme(panel.grid.minor=element_blank()) +
-  theme(axis.ticks=element_blank()) +
-  
-  # Format the legend, but hide by default
-  theme(legend.position="none") +
-  theme(legend.background = element_rect(fill=color.background)) +
-  theme(legend.text = element_text(size=11,color=color.axis.title)) +
-  
-  # Set title and axis labels, and format these and tick marks
-  theme(plot.title=element_text(face="bold",color=color.title,size=24,vjust=2)) + #hjust=-0.08
-  theme(axis.text.x=element_text(face="bold",size=17,color=color.axis.text)) +
-  theme(axis.text.y=element_text(face="bold",size=17,color=color.axis.text)) +
-  theme(axis.title.x=element_text(face="bold",size=18,color=color.axis.title, vjust=-.5)) +
-  theme(axis.title.y=element_text(face="bold",size=18,color=color.axis.title, vjust=1.5)) +
-  
-  # Plot margins
-  theme(plot.margin = unit(c(1, 1, .7, .7), "cm"))
+    # Set the entire chart region to a light gray color
+    theme(panel.background=element_rect(fill=color.background, color=color.background)) +
+    theme(plot.background=element_rect(fill=color.background, color=color.background)) +
+    theme(panel.border=element_rect(color=color.background)) +
+    
+    # Format the grid
+    theme(panel.grid.major=element_line(color=color.grid.major,size=.75)) +
+    theme(panel.grid.minor=element_blank()) +
+    theme(axis.ticks=element_blank()) +
+    
+    # Format the legend, but hide by default
+    theme(legend.position="none") +
+    theme(legend.background = element_rect(fill=color.background)) +
+    theme(legend.text = element_text(size=11,color=color.axis.title)) +
+    
+    # Set title and axis labels, and format these and tick marks
+    theme(plot.title=element_text(face="bold",color=color.title,size=24,vjust=2)) + #hjust=-0.08
+    theme(axis.text.x=element_text(face="bold",size=17,color=color.axis.text)) +
+    theme(axis.text.y=element_text(face="bold",size=17,color=color.axis.text)) +
+    theme(axis.title.x=element_text(face="bold",size=18,color=color.axis.title, vjust=-.5)) +
+    theme(axis.title.y=element_text(face="bold",size=18,color=color.axis.title, vjust=1.5)) +
+    
+    # Plot margins
+    theme(plot.margin = unit(c(1, 1, .7, .7), "cm"))
 }
 
 #' We want to create a data frame with all the significant time-points that are
 #' not in the baseline period.
 #+ viz_plot_setup
-sdf  <- subset(all.ave.df, roi.set=="probatlas")
-sdf2 <- subset(all.diff.df, roi.set=="probatlas" & pval<0.05 & tpts>-1)
+sdf  <- subset(all.ave.df, roi.set=="overlap")
+sdf2 <- subset(all.diff.df, roi.set=="overlap" & pval<0.05 & tpts>-1)
 # Split the two lines up in order to show the shading between them
 split.sdf <- data.frame(
   runtype = subset(sdf, condition=="bio")$runtype, 
@@ -208,7 +206,7 @@ split.sdf <- data.frame(
 
 #+ viz_plot_all, fig.width=12, fig.height=6
 p <- ggplot(sdf, aes(x=tpts, y=response)) +
-  geom_ribbon(data=split.sdf, aes(ymin=phys, ymax=bio), fill="grey", alpha=0.5) + 
+  #geom_ribbon(data=split.sdf, aes(ymin=phys, ymax=bio), fill="grey", alpha=0.5) + 
   geom_line(aes(color=condition), size=1.6) + 
   scale_x_continuous(minor_breaks=0,breaks=seq(-4,20,4),limits=c(-5,20)) + 
   geom_vline(xintercept=0,size=0.9,colour="#535353",lty=2) +
@@ -222,7 +220,7 @@ print(p)
 
 #' Plot each one individually
 #+ viz_plot_indiv, fig.width=6, fig.height=4
-outpath <- "~/Dropbox/Research/facemem/paper/figures/fig_03/es_plots"
+outpath <- "~/Dropbox/Research/facemem/paper/figures/fig_04/es_plots"
 d_ply(sdf, .(runtype, region), function(x) {
   #x <- dlply(sdf, .(runtype, region), function(x) x)[[7]]  
   cruntype <- as.character(x$runtype[1])
@@ -263,6 +261,7 @@ d_ply(sdf, .(runtype, region), function(x) {
   print(p)
   
   fname <- sprintf("%s/%s_%s.png", outpath, cruntype, cregion)
+  fname <- sub("fOp/Ins", "fOp-Ins", fname)
   ggsave(fname, p, width=5, height=2.5)
 })
 

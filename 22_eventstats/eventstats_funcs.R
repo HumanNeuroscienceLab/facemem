@@ -34,8 +34,8 @@ load.data <- function(subject, runtype, roi,
                       select.nodes=NULL, node.names=NULL) 
 {
   # Input file paths
-  timing_file <- sprintf("ts/%s_%s_timing.txt", subject, runtype)
-  dat_file    <- sprintf("ts/%s_%s_%s_peaks_ts.txt", subject, runtype, roi)
+  timing_file <- sprintf("%s/%s_%s_timing.txt", basedir, subject, runtype)
+  dat_file    <- sprintf("%s/%s_%s_%s_peaks_ts.txt", basedir, subject, runtype, roi)
   
   # Read in data
   timing <- read.csv(timing_file)
@@ -121,7 +121,7 @@ smoothed.average.by.condition <- function(lst.dat, new.tr=0.2) {
   avets.df <- ldply(uconds, function(cond) {
     trial.inds <- timing$condition == cond
     ldply(1:nregions, function(ri) {
-      dat  <- lst.dat$trial[trial.inds,,ri]    
+      dat  <- lst.dat$trial[trial.inds,,ri]
       ret  <- smoothed.average(dat, tpts, new.tpts)
       data.frame(
         region = regions[ri], 
@@ -134,6 +134,43 @@ smoothed.average.by.condition <- function(lst.dat, new.tr=0.2) {
   })
   
   avets.df
+}
+
+# Area Under the Curve of the HemoDynamic Response
+auc.hdr <- function(vdat, tpts, to.plot=F) {
+  # Restrict range of indices for peak detection
+  inds      <- tpts>=0 & tpts<=16
+  ptpts     <- tpts[inds]
+  pts       <- vdat[inds]
+  
+  # Find the peak
+  apts      <- abs(pts)
+  peak.ind  <- which.max(apts)
+  peak.tpts <- ptpts[peak.ind]
+  peak.val  <- pts[peak.ind]
+  
+  # Since the baseline should be 0
+  # see if the onset is within that range
+  onset.search  <- pts>0 & apts<peak.val & ptpts<peak.tpts
+  onset.ind     <- ifelse(sum(onset.search) > 0, which(onset.search)[1], 1)
+  offset.search <- pts>0 & apts<peak.val & ptpts>peak.tpts
+  offset.ind    <- ifelse(sum(offset.search) > 0, rev(which(offset.search))[1], length(pts))
+  
+  if (to.plot == TRUE) {
+    plot(ptpts, as.numeric(pts), type='n', xlab="Time", ylab="% Signal Change")
+    abline(h=0, col="grey")
+    abline(v=ptpts[onset.ind], lty=2)
+    abline(v=ptpts[offset.ind], lty=2)
+    lines(ptpts, as.numeric(pts))
+  }
+  
+  # Try different area under the curves
+  # http://stackoverflow.com/questions/4954507/calculate-the-area-under-a-curve-in-r
+  x <- ptpts[onset.ind:offset.ind]
+  y <- pts[onset.ind:offset.ind]
+  auc <- as.numeric(trapz(x,y))
+  
+  auc
 }
 
 # If you want to do a gamm model (mixed effects)
