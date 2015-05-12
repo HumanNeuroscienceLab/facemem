@@ -1,0 +1,197 @@
+---
+title: "PPI of Face-Selective ROIs"
+author: "Zarrar Shehzad"
+date: "May 8, 2015"
+output: html_document
+---
+
+```{r packages}
+library(plyr)
+library(corrplot)
+library(RColorBrewer)
+library(knitr)
+library(ggplot2)
+library(reshape)
+```
+
+# Setup
+
+We start by setting some variables and loading in the data and EVs.
+
+```{r setup, results='hold'}
+setwd("~/Dropbox/Research/facemem/connpaper")
+
+# Make sure to not have any progress when building
+#prog <- "none"
+prog <- "text"
+
+# We want to select a subset of the extract ROIs for our analyses
+subjects <- as.character(as.matrix(read.table("sublist_all.txt")))
+runtypes <- c("Questions", "NoQuestions")
+conds    <- c("bio", "phys")
+# We want to select a subset of the extract ROIs for our analyses
+snames   <- c("R OFA", "R FFA", "R vATL", 
+              "L OFA", "L FFA", "L vATL")
+srois    <- c(
+  3, 1, 69,  # R OFA, R FFA, R vATL
+  8, 2, 62   # L OFA, L FFA, L vATL
+)
+
+# Load all the time-series data and select the relevant ROIs
+tsdir <- "~/Dropbox/Research/facemem/data/ts"
+
+# <= I predict I will read in all the time-series (only those I want) into a large array
+# => no output needs to be list due to different ts length
+# in 2min
+cat("read in time-series\n")
+tsdat <- llply(runtypes, function(runtype) {
+  cat("Runtype:", runtype, "\n")
+  ret <- llply(subjects, function(subject) {
+    infile <- sprintf("%s/%s_%s_probatlas_peaks_ts.txt", tsdir, subject, runtype)
+    sdat <- read.table(infile)
+    sdat <- sdat[,srois]
+    colnames(sdat) <- snames
+    sdat
+  }, .progress=prog)
+  names(ret) <- subjects
+  ret
+})
+names(tsdat) <- runtypes
+
+# EVs
+evdir <- "~/Dropbox/Research/facemem/connpaper/data/evs"
+evinds <- 5:17
+evnames <- c("bio", "phys", 
+             "roll", "pitch", "yaw", "dS", "dL", "dP", 
+             "comp1", "comp2", "comp3", "comp4", "comp5")
+
+# <= Predict that will read in each file and format it for the desired columns
+# <= so get a list of matrices with EVs
+# => yup took 10mins
+cat("Read in EVs\n")
+evdat <- llply(runtypes, function(runtype) {
+  cat("Runtype:", runtype, "\n")
+  ret <- llply(subjects, function(subject) {
+    #cat("-", subject, "\n")
+    infile <- sprintf("%s/xmat_%s_%s_task+compcor+mc.1D", evdir, subject, runtype)
+    edat <- read.table(infile)
+    if (subject == "tb9555") {
+      edat <- edat[,evinds-1] # cuz this subject has 3 runs
+    } else {
+      edat <- edat[,evinds]
+    }    
+    colnames(edat) <- evnames
+    edat
+  }, .progress=prog)
+  names(ret) <- subjects
+  ret
+})
+names(evdat) <- runtypes
+```
+
+Wow that was a process.
+
+# PPI
+
+In computing our interaction term, we will want to center the task regressors 
+and demean the ROI time-series (as per the FSL instructions).
+
+```{r}
+ppi.center <- function(x) x - (max(x) - min(x))/2
+ppi.demean <- function(x) x - mean(x)
+```
+
+## Sample Subject
+
+Ok we want to now compute the PPI. Let's try this first for one subject. The PPI
+model will include the task regressors, ROI time-series, and nuisance regressors.
+
+```{r}
+runtype  <- "Questions"
+subject  <- "tb9226"
+roi      <- "R OFA"
+
+# The seed here refers to an ROI that is predicted the other ROIs
+# It is in the model as the EVs and is predicted the Y/data.
+ppi.res <- laply(runtypes, function(runtype) {
+  laply(subjects, function(subject) {
+    laply(snames, function(roi) {
+      evs <- evdat[[runtype]][[subject]]
+      rois <- tsdat[[runtype]][[subject]]
+      evs <- cbind(evs[,1:2], roi = rois[[roi]],
+                   bioXroi = ppi.center(evs[,1]) * ppi.demean(rois[[roi]]), 
+                   physXroi = ppi.center(evs[,2]) * ppi.demean(rois[[roi]]), 
+                   evs[,3:ncol(evs)])
+      
+      fit        <- lm(as.matrix(rois) ~ as.matrix(evs))
+      bio.betas  <- fit$coefficients[5,]
+      phys.betas <- fit$coefficients[6,]
+      
+      #tmp <- summary(fit)
+      #bio.ts <- sapply(tmp, function(x) x$coefficients[5,3])
+      #phys.ts <- sapply(tmp, function(x) x$coefficients[6,3])
+      
+      rbind(bio=bio.betas, phys=phys.betas)
+    })
+  }, .progress=prog)
+})
+dimnames(ppi.res) <- list(runtype=runtypes, subject=subjects, seed=snames, 
+                          condition=conds, target=snames)
+```
+
+The results appear to suggest nothing in line with our hypotheses.
+[need to think over this a bit. don't make an immediate decision change.]
+
+```{r}
+ppi.ts <- aaply(ppi.res, c(1,3,5), function(x) {
+  t.test(x[,1], x[,2], paired=T)$statistic
+})
+ppi.sig <- aaply(ppi.res, c(1,3,5), function(x) {
+  wilcox.test(x[,1], x[,2], paired=T)$p.value
+})
+round(ppi.ts[1,,], 2)
+round(ppi.sig[1,,], 3)
+# 1 = p < 0.1 and 2 = p < 0.05
+(ppi.sig[1,,]<0.1) + (ppi.sig[1,,]<0.05)
+```
+
+TODO: try to run this all without the compcor regressers.
+
+```{r}
+# The seed here refers to an ROI that is predicted the other ROIs
+# It is in the model as the EVs and is predicted the Y/data.
+ppi.res <- laply(runtypes, function(runtype) {
+  laply(subjects, function(subject) {
+    laply(snames, function(roi) {
+      evs <- evdat[[runtype]][[subject]]
+      rois <- tsdat[[runtype]][[subject]]
+      evs <- cbind(evs[,1:2], roi = rois[[roi]],
+                   bioXroi = ppi.center(evs[,1]) * ppi.demean(rois[[roi]]), 
+                   physXroi = ppi.center(evs[,2]) * ppi.demean(rois[[roi]]), 
+                   evs[,3:(3+6)])
+      
+      fit        <- lm(as.matrix(rois) ~ as.matrix(evs))
+      bio.betas  <- fit$coefficients[5,]
+      phys.betas <- fit$coefficients[6,]
+      
+      rbind(bio=bio.betas, phys=phys.betas)
+    })
+  }, .progress=prog)
+})
+dimnames(ppi.res) <- list(runtype=runtypes, subject=subjects, seed=snames, 
+                          condition=conds, target=snames)
+
+```
+
+```{r}
+ppi.ts <- aaply(ppi.res, c(1,3,5), function(x) {
+  t.test(x[,1], x[,2], paired=T)$statistic
+})
+ppi.sig <- aaply(ppi.res, c(1,3,5), function(x) {
+  wilcox.test(x[,1], x[,2], paired=T)$p.value
+})
+round(ppi.ts[1,,], 2)
+round(ppi.sig[1,,], 3)
+# 1 = p < 0.1 and 2 = p < 0.05
+(ppi.sig[1,,]<0.1) + (ppi.sig[1,,]<0.05)
+```

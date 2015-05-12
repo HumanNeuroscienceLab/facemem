@@ -1,0 +1,470 @@
+---
+title: "Connectivity of Face-Selective ROIs"
+author: "Zarrar Shehzad"
+date: "May 7, 2015"
+output:
+  html_document:
+    number_sections: yes
+    toc: yes
+---
+
+```{r packages}
+library(plyr)
+library(corrplot)
+library(RColorBrewer)
+library(knitr)
+library(ggplot2)
+library(reshape)
+```
+
+We start by setting some variables and loading in the data. Note that we have 6 ROIs.
+
+```{r setup}
+setwd("~/Dropbox/Research/facemem/connpaper")
+
+# Make sure to not have any progress when building
+prog <- "none"
+#prog <- "text"
+
+# We want to select a subset of the extract ROIs for our analyses
+subjects <- as.character(as.matrix(read.table("sublist_all.txt")))
+runtypes <- c("Questions", "NoQuestions")
+conds    <- c("bio", "phys")
+snames   <- c("R OFA", "R FFA", "R vATL", 
+              "L OFA", "L FFA", "L vATL")
+
+load("data/ts_rois_ofa+ffa+vatl.rda")
+head(dat$Questions$bio$tb9226)
+```
+
+The output above shows the first 6 time-points across the 6 ROIs for one subject.
+
+# Connectivity: Correlations
+
+## Compute the correlations
+
+Here, we will compute the connectivity between every pair of ROIs.
+
+```{r correlations}
+# rmats is 
+# 2 x 2 x 16 x 6 x 6
+# runtypes x conditions x subjects x rois x rois
+rmats <- laply(runtypes, function(runtype) {
+  cat("Runtype:", runtype, "\n")
+  laply(conds, function(cond) {
+    cat("- Condition:", cond, "\n")
+    laply(subjects, function(subject) {
+      # Compute correlation between ROI time-series
+      ts.mat    <- dat[[runtype]][[cond]][[subject]]
+      r.mat     <- cor(ts.mat)
+      return(r.mat)
+    }, .progress=prog)
+  })
+})
+dimnames(rmats) <- list(runtype=runtypes, condition=conds, subject=subjects, 
+                        roi=snames, roi=snames)
+```
+
+## Convert to Z-Scores
+
+Then we convert the connectivity to z-values. This conversion will make the 
+distribution of correlations more normal and will be used in any statistical 
+tests comparing the different conditions.
+
+```{r z-scores}
+# r2z <- function(r, n) {
+#   #atanh(r)*sqrt(n-3)
+#   atanh(r)
+# }
+r2t <- function(r, kappa) {
+  t = r*sqrt((kappa-1)/(1-r*r))
+  return(t) # df = kappa-1
+}
+r2z <- function(r, kappa) {
+  r <- as.matrix(r)
+  t <- r2t(r, kappa)
+  z <- matrix(0, nrow(r), ncol(r))
+  z[t>0] <- qt(pt(t[t>0], kappa-1, lower.tail=F), Inf, lower.tail=F)
+  z[t<0] <- qt(pt(t[t<0], kappa-1, lower.tail=T), Inf, lower.tail=T)
+  z
+}
+
+zmats <- laply(runtypes, function(runtype) {
+  cat("Runtype:", runtype, "\n")
+  laply(conds, function(cond) {
+    cat("- Condition:", cond, "\n")
+    laply(subjects, function(subject) {
+      # Compute correlation between ROI time-series
+      ts.mat    <- dat[[runtype]][[cond]][[subject]]
+      r.mat     <- cor(ts.mat)
+      # Convert correlations to z-stats
+      z.mat     <- r2z(r.mat, nrow(ts.mat))
+      diag(z.mat) <- 0
+      # Return
+      return(z.mat)
+    }, .progress=prog)
+  })
+})
+dimnames(zmats) <- dimnames(rmats)
+```
+
+## Average Connectivity
+
+We can now compute the average connectivity (collapsing across subjects).
+
+```{r averages}
+ave.rmat <- apply(rmats, c(1,2,4,5), function(x) tanh(mean(atanh(x))))
+overall.ave.rmat <- apply(rmats, c(4,5), function(x) tanh(mean(atanh(x))))
+```
+
+### Average Connectivity Collapsed Across RunTypes and Conditions
+
+Let's plot the connection strengths for the average across the two runtypes/tasks 
+and two conditions. Note that the strongest connectivity is between the FFA & OFA.
+
+```{r plot-averages}
+cols <- rev(colorRampPalette(brewer.pal(10, "RdBu"))(20))
+#corrplot(overall.ave.rmat, method="circle", diag=F, outline=T, col=cols, 
+#         cl.lim=c(0,1), cl.length=length(cols)/2+1, addgrid.col="grey")
+corrplot.mixed(overall.ave.rmat, lower="number", upper="circle", diag='n', 
+               outline=T, col=cols, tl.pos="lt", 
+               cl.lim=c(0,1), cl.length=length(cols)/2+1, addgrid.col="grey")
+## highlight the within-hemisphere connectivity
+n <- length(snames)
+mat <- cbind(c(0,3), n - c(0,3), 
+             c(3,6), n - c(3,6)) + 0.5
+rect(mat[1, 1], mat[1, 2], mat[1, 3], mat[1, 4], 
+     border = brewer.pal(9,"Set1")[3], lwd = 3, lty=1)
+rect(mat[2, 1], mat[2, 2], mat[2, 3], mat[2, 4], 
+     border = brewer.pal(9,"Set1")[4], lwd = 3, lty=1)
+#corrRect(c(3,1,2), col=brewer.pal(9,"Set1")[3], lwd=3)
+```
+
+### Average Connectivity by each RunType & Condition
+
+We can now drill down and look at the connectivity for each task and each condition.
+
+```{r plot-averages-2}
+for (ri in 1:2) {
+  for (ci in 1:2) {
+    #corrplot(ave.rmat[ri,ci,,], method="circle", diag=F, outline=T, col=cols, 
+    #     cl.lim=c(0,1), cl.length=length(cols)/2+1, addgrid.col="grey", 
+    #     mar=c(0,0,1,0), title=sprintf("%s - %s", runtypes[ri], conds[ci]))
+    corrplot.mixed(ave.rmat[ri,ci,,], lower="number", upper="circle", diag='n', 
+                   outline=T, col=cols, tl.pos="lt", 
+                   cl.lim=c(0,1), cl.length=length(cols)/2+1, addgrid.col="grey", 
+                   mar=c(0,0,1,0), title=sprintf("%s - %s", runtypes[ri], conds[ci]))
+
+    n <- length(snames)
+    mat <- cbind(c(0,3), n - c(0,3), 
+                 c(3,6), n - c(3,6)) + 0.5
+    rect(mat[1, 1], mat[1, 2], mat[1, 3], mat[1, 4], 
+         border = brewer.pal(9,"Set1")[3], lwd = 3, lty=1)
+    rect(mat[2, 1], mat[2, 2], mat[2, 3], mat[2, 4], 
+         border = brewer.pal(9,"Set1")[4], lwd = 3, lty=1)
+  }
+}
+```
+
+## Differences between Bio and Phys Conditions
+
+We can take the difference in the connectivity values between bio and phys.
+
+### Average Difference
+
+Here we take the average differences.
+
+Bio > Phys : Red. ~~~ Phys > Bio : Blue.
+
+```{r ave-diffs}
+for (ri in 1:2) {
+  d <- ave.rmat[ri,1,,] - ave.rmat[ri,2,,]
+  rang <- rep(max(abs(d)), 2) * c(-1,1)
+  corrplot.mixed(d, lower="number", upper="circle", diag='n', is.corr=F, 
+                 outline=T, col=cols, tl.pos="lt", 
+                 cl.lim=rang, cl.length=length(cols)/2+1, addgrid.col="grey", 
+                 mar=c(0,0,1,0), title=runtypes[ri])
+  n <- length(snames)
+  mat <- cbind(c(0,3), n - c(0,3), 
+               c(3,6), n - c(3,6)) + 0.5
+  rect(mat[1, 1], mat[1, 2], mat[1, 3], mat[1, 4], 
+       border = brewer.pal(9,"Set1")[3], lwd = 3, lty=1)
+  rect(mat[2, 1], mat[2, 2], mat[2, 3], mat[2, 4], 
+       border = brewer.pal(9,"Set1")[4], lwd = 3, lty=1)
+}
+```
+
+### Significant Differences?
+
+#### Wilcox Signed Rank Test with r => Z vals
+
+I am using the non-parametric wilcox sign rank test. In the end, this approach 
+seems to be fairly similar to using the parametric t-test (see below).
+
+For the Questions run, we find that
+
+  * R vATL - R OFA was significantly greater for bio vs phys (p < 0.05).
+  * R vATL - R FFA was marginally greater for bio vs phys (p = 0.08).
+  * L vATL - L FFA was also marginally greater for bio vs phys (p = 0.1)
+
+Nothing was found for the No Questions run.
+
+```{r sig-diffs-z, results='hold'}
+pMats <- aaply(zmats, c(1,4,5), function(x) {
+  if (all(x==0)) {
+    return(0)
+  } else {
+    return(wilcox.test(x[1,], x[2,], paired=T)$p.value)
+  }
+})
+cat("Questions\n")
+round(pMats[1,,], 2)
+cat("No Questions\n")
+round(pMats[2,,], 2)
+```
+
+#### T-Test with r => Z vals
+
+These are the results when using a t-statistic. As you can see the wilcox test,
+might be more robust in the sense that we get more significant results in some 
+connections of interest with the vATL.
+
+```{r sig-diffs-t, results='hold'}
+pMats <- aaply(zmats, c(1,4,5), function(x) {
+  if (all(x==0)) {
+    return(0)
+  } else {
+    return(t.test(x[1,], x[2,], paired=T)$p.value)
+  }
+})
+cat("Questions\n")
+round(pMats[1,,], 2)
+cat("No Questions\n")
+round(pMats[2,,], 2)
+```
+
+#### Wilcox Test with r vals
+
+However, if I use only the correlations and not the Fischer Z-transformed
+correlations, then I get some almost significant differences amongst the right hemisphere
+ROIs (but only for the Questions task).
+
+```{r sig-diffs-r, results='hold'}
+pMats <- aaply(rmats, c(1,4,5), function(x) {
+  if (all(x==1)) {
+    return(0)
+  } else {
+    return(wilcox.test(x[1,], x[2,], paired=T)$p.value)
+  }
+})
+
+cat("Questions\n")
+round(pMats[1,,], 2)
+#kable(pMats[1,,], format="html", digits=2, caption="Questions")
+
+cat("NoQuestions\n")
+round(pMats[2,,], 2)
+#kable(pMats[2,,], format="html", digits=2, caption="Passitve Viewing")
+```
+
+# Effect of # of Time-Points
+
+I wonder if this difference in using the z versus r values has to do with the 
+different concatenated condition time-series having different # of time-points. 
+So here I try to explore that issue by looking at any differences between the 
+conditions in the number of time-points.
+
+```{r time-diffs, results='hold'}
+# Collect all the ns
+nmats <- laply(runtypes, function(runtype) {
+  cat("Runtype:", runtype, "\n")
+  laply(conds, function(cond) {
+    cat("- Condition:", cond, "\n")
+    laply(subjects, function(subject) {
+      # Compute correlation between ROI time-series
+      ts.mat    <- dat[[runtype]][[cond]][[subject]]
+      nrow(ts.mat)
+    }, .progress=prog)
+  })
+})
+dimnames(nmats) <- list(runtype=runtypes, condition=conds, subject=subjects)
+
+# See if there is any significant difference in the ns
+# using both the wilcox test and t-test
+ndiffs1 <- aaply(nmats, 1, function(x) wilcox.test(x[1,], x[2,], paired=T)$p.value)
+ndiffs2 <- aaply(nmats, 1, function(x) t.test(x[1,], x[2,], paired=T)$p.value)
+
+# Get the average differences
+naves <- aaply(nmats, 1, function(x) mean(x[1,] - x[2,]))
+```
+
+Unfortunately, it appears that there are significant differences in the length
+of the conditions in the condition as seen below.
+
+```{r time-diffs-2, results='hold'}
+cat("wilcox test\n")
+print(ndiffs1)
+cat("t-test\n")
+print(ndiffs2)
+```
+
+And it seems that on average for a given subject there are ~9 more seconds in the bio condition for 
+the Questions run and on average ~5 more seconds in the bio condition for the 
+No Questions condition. This might explain why using the raw r-values may lead to 
+significant differences since it's confounded by the number of time-points.
+
+```{r time-diffs-3}
+print(naves)
+```
+
+To understand this more. Let's plot the histogram for the total time in each
+condition by runtypes, and then plot the difference between the two conditions.
+
+```{r time-diff-plots}
+ndf <- melt(nmats)
+ggplot(ndf, aes(x=value)) + 
+  geom_histogram() + 
+  facet_grid(runtype ~ condition) + 
+  xlab("# of time-points")
+```
+
+It appears that there is one participant who has a low number of time-points. I
+think this might be the subject for whom we only collected 3 runs of data. But 
+note there doesn't appear to be a big difference between conditions for this 
+subject.
+
+Why don't we now look at the histogram of the differences below. This shows more 
+clearly that most of our subjects have more time-points for the bio than the
+phys condition. Values greater than 0 mean bio > phys.
+
+```{r time-diff-plots-2}
+ndf <- melt(nmats[,1,]-nmats[,2,])
+ggplot(ndf, aes(x=value, fill=runtype)) + 
+  geom_vline(xintercept=0, linetype=2) + 
+  geom_histogram() + 
+  facet_grid(runtype ~ .) + 
+  xlab("# of time-points bio > phys")
+```
+
+## Double Check with Timing Files
+
+So this is turning into a real investigation. We can double check the more 
+original timing files and see if the jitter is properly randomized. This would
+be a sanity check that I created these files in the proper manner. Also in this
+case we can get the durations for each trial.
+
+```{r read-timing}
+scandat <- ldply(runtypes, function(runtype) {
+  #cat(runtype, "\n")
+  tab <- ldply(subjects, function(subject) {
+    #cat("-", subject, "\n")
+    indir  <- "~/Dropbox/Research/facemem/data/ts"
+    infile <- sprintf("%s/%s_%s_timing.txt", indir, subject, runtype)
+    tab    <- read.csv(infile)
+    cbind(subject=subject, tab)
+  })
+  cbind(runtype=runtype, tab)
+})  
+head(scandat)
+
+ggplot(scandat, aes(x=duration)) + 
+  geom_histogram() + 
+  facet_grid(runtype ~ condition) + 
+  xlab("# of time-points")
+```
+
+For the remainder, I'll focus mainly on the Questions run and try to see if I can
+reproduce the significant difference in # of time-points between conditions.
+
+### Overall Difference (not significant)
+
+If I collapse across subjects and compare the duration of each trial between
+conditions, I don't find a significant difference.
+
+```{r overall-diff}
+qscandat <- subset(scandat, runtype=="Questions")
+# T-Test
+t.test(duration ~ condition, data=qscandat)
+# Anova (to account for repeated measures)
+summary(aov(duration ~ condition + Error(subject), data=qscandat))
+```
+
+### Number of Trials (significantish)
+
+When looking at the number of trials, we see the first three subjects have more
+bio trials (note that this is due to the disdaqs issue). It's interesting that the
+difference between just those three subjects can lead to an almost significant 
+difference.
+
+```{r ntrials-diff}
+tmp <- ddply(qscandat, .(subject, condition), function(x) c(ntrials=nrow(x)))
+
+# Plot
+ggplot(tmp, aes(x=subject, y=ntrials, fill=condition)) +
+  geom_bar(position="dodge", stat="identity") + 
+  coord_cartesian(ylim = range(tmp$ntrials) + c(-1,1))  + 
+  theme(
+    axis.title.x = element_blank(), 
+    axis.text.x = element_text(angle=45, vjust=0.5)
+  )
+
+# Table
+ddply(tmp, .(subject), function(x) c(mean=mean(x$ntrials), diff=x$ntrials[1] - x$ntrials[2]))
+
+# Significance Test (almost)
+t.test(ntrials ~ condition, paired=T, data=tmp)
+```
+
+### Total Time Across Trials (Significant)
+
+I do get differences here.
+
+I should note that if I even the number of trials between the two conditions, 
+then I don't get any significant differences here. So it's likely that the 
+differences here are driven by those first 3 subjects who have 2 more trials 
+each with the bio vs phys condition.
+
+With that said, it does appear that there are large differences in total duration
+of each condition for other subjects like the fourth one. For the fifth subject,
+the difference is flipped with more time spent during phys trials. In general, 
+the differences for each subject between the two conditions is small.
+
+```{r time-diff}
+# Sum up all the trial durations
+tmp <- ddply(qscandat, .(subject, condition), function(x) c(total.duration=sum(x$duration)))
+ggplot(tmp, aes(x=subject, y=total.duration, fill=condition)) + 
+  geom_bar(position="dodge", stat="identity") + 
+  coord_cartesian(ylim = range(tmp$total.duration) + c(-1,1)) + 
+  ylab("Time (secs)") + 
+  theme(
+    axis.title.x = element_blank(), 
+    axis.text.x = element_text(angle=45, vjust=0.5, size=12)
+  )
+# Significance
+t.test(total.duration ~ condition, paired=T, data=tmp)
+# Display each subject's time
+ddply(tmp, .(subject), function(x) {
+  round(c(bio=x$total[1], phys=x$total[2], diff=x$total[1]-x$total[2]), 1)
+})
+```
+
+### Other Factors
+
+One last thing to note is that for getting my time-series for connectivity, I 
+shift the trial data that I extract by 2 time-points to account for the HRF 
+delay. This means that for trials at the end of each run, the amount we extract 
+for that trial will be made shorter. This is only a problem if there is an 
+imbalance in which condition comes at the end of each run. Alas it seems there is
+a slight imbalance with physical trials coming more often at the end of each run.
+
+```{r, results='hold'}
+cat("Number of trials at the end of the run\n")
+table(qscandat[c(diff(qscandat$run)!=0, F),]$condition)
+```
+
+# Final Notes
+
+For connectivity, we can restrict the length of time to some minimum value, 
+which might make more sense anyway. Although I just realized that there could be
+two issues. First, the trial lengths could differ. Second, the number of trials
+in each condition could differ.
