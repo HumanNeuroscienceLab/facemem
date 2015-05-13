@@ -122,6 +122,7 @@ zmats <- laply(conds, function(cond) {
   }, .parallel=TRUE)
 })
 
+corrplot
 
 ###
 # DIFFERENCE BTW CONDITIONS
