@@ -35,10 +35,6 @@ conds    <- c("bio", "phys")
 # We want to select a subset of the extract ROIs for our analyses
 snames   <- c("R OFA", "R FFA", "R vATL", 
               "L OFA", "L FFA", "L vATL")
-srois    <- c(
-  3, 1, 69,  # R OFA, R FFA, R vATL
-  8, 2, 62   # L OFA, L FFA, L vATL
-)
 ```
 
 And then we load the data.
