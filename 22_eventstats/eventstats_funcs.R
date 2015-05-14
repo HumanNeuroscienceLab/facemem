@@ -136,6 +136,32 @@ smoothed.average.by.condition <- function(lst.dat, new.tr=0.2) {
   avets.df
 }
 
+average.by.condition <- function(lst.dat) {
+  timing   <- lst.dat$timing
+  uconds   <- levels(timing$condition)
+  tpts     <- lst.dat$tpts
+  regions  <- dimnames(lst.dat$trial)[[3]]
+  nregions <- length(regions)
+  
+  avets.df <- ldply(uconds, function(cond) {
+    trial.inds <- timing$condition == cond
+    ldply(1:nregions, function(ri) {
+      dat  <- lst.dat$trial[trial.inds,,ri] # trials x tpts
+      rmean<- colMeans(dat, na.rm=T)
+      rsd  <- apply(dat, 2, sd, na.rm=T)/sqrt(nrow(dat))
+      data.frame(
+        region = regions[ri], 
+        condition = cond, 
+        tpts = tpts, 
+        mean = rmean, 
+        se   = rsd
+      )
+    })
+  })
+  
+  avets.df
+}
+
 # Area Under the Curve of the HemoDynamic Response
 auc.hdr <- function(vdat, tpts, to.plot=F) {
   # Restrict range of indices for peak detection

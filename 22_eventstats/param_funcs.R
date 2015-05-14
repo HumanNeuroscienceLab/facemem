@@ -43,7 +43,7 @@ get_parameters <- function(hdrf, tpts=0:(length(hdrf)-1), baseline.time=c(0,0),
   slopes      <- diff(hdrf)
   ascend.ind2 <- local.maxima(slopes)
   ascend.ind2 <- tail(ascend.ind2[ascend.ind2<peak.ind], 1)
-  onset.ind   <- which(slopes <= 0.1*slopes[ascend.ind2])
+  onset.ind   <- which(slopes <= 0.25*slopes[ascend.ind2])
   onset.ind   <- tail(onset.ind[onset.ind<ascend.ind2], 1)
   ## more accurate would be midway between this and next time-point
   onset.time  <- (tpts[onset.ind] + tpts[onset.ind+1])/2
