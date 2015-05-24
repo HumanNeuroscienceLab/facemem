@@ -2,7 +2,9 @@
 
 #' # Functions
 #+ functions
-setwd("/Users/czarrar/Dropbox/Research/facemem/connpaper/22_eventstats")
+#base <- "~/Dropbox/Research/facemem"
+base <- "/mnt/nfs/psych/faceMemoryMRI/scripts"
+setwd(file.path(base, "connpaper/22_eventstats"))
 source("eventstats_funcs.R")
 sle <- function(x){
   if(!is.numeric(x)) x <- as.numeric(x)
@@ -18,9 +20,7 @@ sle <- function(x){
 #' # Setup
 #+ setup
 library(plyr)
-subjects <- sub("_Questions_timing.txt", "", 
-                list.files("~/Dropbox/Research/facemem/data/ts", 
-                           pattern="_Questions_timing.txt"))
+subjects <- as.character(read.table("../sublist_all.txt")[,1])
 runtypes <- c("Questions", "NoQuestions")
 rois     <- c("postask", "probatlas")
 
@@ -45,8 +45,8 @@ srois2 <- c(
   62, # L vATL (post)
   26  # L vATL (ant)
 )
-snames2 <- c("R OFA", "R FFA", "R vATL-post", "R vATL-ant", 
-             "L OFA", "L FFA", "L vATL-post", "L vATL-ant")
+snames2 <- c("R IOG", "R mFus", "R aFus", "R vATL", 
+             "L IOG", "L mFus", "L aFus", "L vATL")
 srois3 <- c(
   2,   # L vATL
   5,   # L PHC
@@ -67,7 +67,7 @@ snames3 <- c("R vATL", "L PHC", "L RSC", "R RSC",
              "L dACC", "R dACC", "B midCC", "L fOp/Ins", "R fOp/Ins", 
              "L fOrb", "R fOrb", "L tpole", "R tpole", "bstem")
 srois   <- list(postask=srois1, probatlas=srois2, overlap=srois3)
-snames  <- list(postask=snames1, probatlas=snames2, overlap=snames)
+snames  <- list(postask=snames1, probatlas=snames2, overlap=snames3)
 
 #' # Load the Data
 #' 
@@ -86,17 +86,17 @@ all.df <- ldply(rois, function(roi) {
       # Load the data
       # ret <- list(trial=matrix(trial x time x region), timing, ntpts)
       lst.dat <- load.data(subject, runtype, roi, 
-                basedir="~/Dropbox/Research/facemem/data/ts", 
+                basedir=file.path(base, "connpaper/data/ts"), 
                 prestim=5, poststim=19, 
                 select.nodes=srois[[roi]], node.names=snames[[roi]])   
       
       # Remove the baseline
-      lst.dat <- remove.baseline(lst.dat, baseline.tpts=-3:-1)
+      lst.dat <- remove.baseline(lst.dat, baseline.tpts=-1:0)
       ## to check
       ## round(as.numeric(apply(lst.dat$trial[,3:5,4], 1, mean), 2))
       
       # Get the mean time-series per condition via a smoothed fit
-      ave.df  <- smoothed.average.by.condition(lst.dat, new.tr=0.5)
+      ave.df  <- smoothed.average.by.condition(lst.dat, new.tr=0.2)
       
       # Return dataframe with additional information
       cbind(data.frame(
