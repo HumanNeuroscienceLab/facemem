@@ -51,18 +51,32 @@ srois3 <- c(
   2,   # L vATL
   5,   # L PHC
   4,   # L RSC
-  40,   # R PCC
+  40,   # R RSC
   16,  # L dACC
   7,   # R dACC
   17,  # B midCC
   31,  # L fOp/Ins
-  25,  # R fOp/Ins
-  8,   # L fOrb
-  30  # R fOrb
+  25  # R fOp/Ins
 )
-snames3 <- c("R vATL", "L PHC", "L RSC", "R RSC", 
-             "L dACC", "R dACC", "B midCC", "L fOp/Ins", "R fOp/Ins", 
-             "L fOrb", "R fOrb")
+snames3 <- c("L vATL", "L PHC", "L RSC", "R RSC", 
+             "L dACC", "R dACC", "B midCC", "L fOp/Ins", "R fOp/Ins")
+# srois3 <- c(
+#   2,   # L vATL
+#   5,   # L PHC
+#   4,   # L RSC
+#   40,   # R PCC
+#   16,  # L dACC
+#   7,   # R dACC
+#   17,  # B midCC
+#   31,  # L fOp/Ins
+#   25,  # R fOp/Ins
+#   8,   # L fOrb
+#   30  # R fOrb
+# )
+# snames3 <- c("R vATL", "L PHC", "L RSC", "R RSC", 
+#              "L dACC", "R dACC", "B midCC", "L fOp/Ins", "R fOp/Ins", 
+#              "L fOrb", "R fOrb")
+
 srois   <- list(postask=srois1, probatlas=srois2, overlap=srois3)
 snames  <- list(postask=snames1, probatlas=snames2, overlap=snames3)
 

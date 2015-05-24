@@ -43,12 +43,12 @@ all.df <- ldply(runtypes, function(runtype) {
                          select.nodes=srois, node.names=snames)
     
     # Remove the baseline
-    lst.dat <- remove.baseline(lst.dat, baseline.tpts=-3:-1)
+    lst.dat <- remove.baseline(lst.dat, baseline.tpts=-1:0)
     ## to check
     ## round(as.numeric(apply(lst.dat$trial[,3:5,4], 1, mean), 2))
     
     # Get the mean time-series per condition via a smoothed fit
-    ave.df  <- smoothed.average.by.condition(lst.dat, new.tr=0.5)
+    ave.df  <- smoothed.average.by.condition(lst.dat, new.tr=0.2)
     
     # Return dataframe with additional information
     cbind(data.frame(
@@ -57,6 +57,45 @@ all.df <- ldply(runtypes, function(runtype) {
     ), ave.df)
   }, .progress="text")
 })
+
+
+## do some significance testing with the auc
+library(caTools)
+all.df2 <- ldply(runtypes, function(runtype) {
+  ldply(subjects, function(subject) {
+    # Load the data
+    # ret <- list(trial=matrix(trial x time x region), timing, ntpts)
+    lst.dat <- load.data(subject, runtype, roi, 
+                         basedir="~/Dropbox/Research/facemem/data/ts", 
+                         prestim=5, poststim=19, 
+                         select.nodes=srois, node.names=snames)
+    
+    # Remove the baseline
+    lst.dat <- remove.baseline(lst.dat, baseline.tpts=-1:0)
+    ## to check
+    ## round(as.numeric(apply(lst.dat$trial[,3:5,4], 1, mean), 2))
+    
+    # Get the mean time-series per condition via a smoothed fit
+    ave.df  <- smoothed.average.by.condition(lst.dat, new.tr=0.2)
+    
+    # Now get the area under the curve of the smoothed fit
+    auc.df <- ddply(ave.df, .(condition, region), function(x) {
+      c(auc=auc.hdr(x$mean, x$tpts))
+    })
+    
+    # Return dataframe with additional information
+    cbind(data.frame(
+      runtype = runtype, 
+      subject = subject
+    ), auc.df)
+  }, .progress="text")
+})
+sig.auc.df <- ddply(all.df2, .(runtype, region), function(x) {
+  res <- t.test(auc~condition, data=x, paired=T)
+  res2 <- wilcox.test(auc~condition, data=x, paired=T)
+  c(t=res$statistic, p=res$p.value, p2=res2$p.value)
+})
+sig.auc.df ## woot only the vATL is significant
 
 
 ###
@@ -73,10 +112,14 @@ all.ave.df <- ddply(all.df, .(runtype, region, condition, tpts), function(x) {
 # Note that 13/16 agreement is significant
 all.diff.df <- ddply(all.df, .(runtype, region, tpts), function(x) {
   res <- t.test(mean ~ condition, data=x, paired=T)
+  res2 <- wilcox.test(mean ~ condition, data=x, paired=T)
   diff <- daply(x, .(subject), function(x) diff(x$mean))
   agree <- max(table(sign(diff)))/length(diff)
-  c(diff=as.numeric(res$estimate), tval=res$statistic, pval=res$p.value, agree=agree)
+  c(diff=as.numeric(res$estimate), tval=res$statistic, pval=res$p.value, pval2=res2$p.value, agree=agree)
 })
+# get the significant ones (to report!)
+subset(all.diff.df, runtype=="Questions" & pval<0.05 & tpts>0)
+subset(all.diff.df, runtype=="Questions" & pval2<0.05 & tpts>0)
 
 # Plot the average
 library(ggplot2)
@@ -88,6 +131,23 @@ ggplot(all.ave.df, aes(x=tpts, y=response)) +
   ylab("Percent Signal Change") +
   xlab("Time (s)") + 
   facet_grid(runtype ~ region, scales="free_y")
+## plot just questions
+ggplot(subset(all.ave.df, runtype=="Questions"), aes(x=tpts, y=response)) +
+  geom_line(aes(color=condition), size=1.6) + 
+  scale_x_continuous(minor_breaks=0,breaks=seq(-4,20,4),limits=c(-5,20)) + 
+  geom_vline(xintercept=0,size=0.9,colour="#535353",lty=2) +
+  geom_hline(yintercept=0,size=1.2,colour="#535353") +
+  ylab("Percent Signal Change") +
+  xlab("Time (s)") + 
+  facet_grid(. ~ region, scales="free_y")
+ggplot(subset(all.ave.df, runtype=="Questions" & region%in%c("L FFA", "L vATL")), aes(x=tpts, y=response)) +
+  geom_line(aes(color=condition), size=1.6) + 
+  scale_x_continuous(minor_breaks=0,breaks=seq(-4,20,4),limits=c(-5,20)) + 
+  geom_vline(xintercept=0,size=0.9,colour="#535353",lty=2) +
+  geom_hline(yintercept=0,size=1.2,colour="#535353") +
+  ylab("Percent Signal Change") +
+  xlab("Time (s)") + 
+  facet_grid(. ~ region, scales="free_y")
 
 # Better Theme
 bar_theme <- function() {
@@ -138,10 +198,37 @@ tmp <- subset(all.ave.df, runtype=="Questions" & region=="R FFA" & condition=="b
 plot(tmp$tpts, tmp$response, type='l')
 get_parameters(tmp$response, tmp$tpts, baseline.time=c(-3,-1), to.plot=T)
 
+# get for group average
 res <- ddply(all.ave.df, .(runtype, region, condition), function(x) {
-  params <- get_parameters(x$response, x$tpts, baseline.time=c(-3,-1), to.plot=F)
+  params <- get_parameters(x$response, x$tpts, baseline.time=c(-1,0), to.plot=F)
   data.frame(runtype=x$runtype[1], region=x$region[1], condition=x$condition[1], params)
 })
+# get for each subject
+sres <- ddply(all.df, .(runtype, subject, region, condition), function(x) {
+  #cat(as.character(x$subject[1]), as.character(x$runtype[1]), as.character(x$region[1]), as.character(x$condition[1]), "\n")
+  params <- get_parameters(x$mean, x$tpts, baseline.time=c(-1,0), to.plot=F)
+  if (length(params$onset)==0) params$onset <- NA
+  if (length(params$width)==0) params$width <- NA
+  data.frame(subject=x$subject[1], runtype=x$runtype[1], region=x$region[1], condition=x$condition[1], 
+             height=params$height, peak=params$peak, width=params$width, onset=params$onset)
+})
+
+# significance test
+# nothing but L FFA is the largest difference [maybe if use 0.1...]
+sig.sres <- ddply(sres, .(runtype, region), function(x) {
+  y <- t.test(peak~condition, paired=T, data=x)
+  y2<- wilcox.test(peak~condition, paired=T, data=x)
+  c(t=y$statistic, p=y$p.value, p2=y2$p.value)
+})
+ave.sres <- ddply(sres, .(runtype, region, condition), colwise(mean, .(height, peak)))
+ave.sres[,4:5] <- round(ave.sres[,4:5], 2)
+subset(ave.sres, runtype=="Questions")
+sd.sres <- ddply(sres, .(runtype, region, condition), colwise(sd, .(height, peak)))
+
+# tests between rois (nope, doesn't yield much)
+x1 <- subset(sres, runtype=="Questions" & region=="R vATL")$peak
+x2 <- subset(sres, runtype=="Questions" & region=="R FFA")$peak
+t.test(x1, x2, paired=T)
 
 # Peak Latency
 ggplot(res, aes(x=region, y=peak, fill=condition)) +

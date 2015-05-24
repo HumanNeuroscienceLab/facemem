@@ -68,7 +68,7 @@ all.df <- ldply(rois, function(roi) {
                            prestim=5, poststim=19)
       
       # Remove the baseline
-      lst.dat <- remove.baseline(lst.dat, baseline.tpts=-3:-1)
+      lst.dat <- remove.baseline(lst.dat, baseline.tpts=-1:0)
       ## to check
       ## round(as.numeric(apply(lst.dat$trial[,3:5,4], 1, mean), 2))
       
