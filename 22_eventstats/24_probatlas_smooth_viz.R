@@ -2,8 +2,8 @@
 
 #' # Functions
 #+ functions
-#base <- "~/Dropbox/Research/facemem"
-base <- "/mnt/nfs/psych/faceMemoryMRI/scripts"
+base <- "~/Dropbox/Research/facemem"
+#base <- "/mnt/nfs/psych/faceMemoryMRI/scripts"
 setwd(file.path(base, "connpaper/22_eventstats"))
 source("eventstats_funcs.R")
 sle <- function(x){
@@ -86,12 +86,12 @@ all.df <- ldply(rois, function(roi) {
       # Load the data
       # ret <- list(trial=matrix(trial x time x region), timing, ntpts)
       lst.dat <- load.data(subject, runtype, roi, 
-                basedir=file.path(base, "connpaper/data/ts"), 
+                basedir=file.path(base, "data/ts"), 
                 prestim=5, poststim=19, 
                 select.nodes=srois[[roi]], node.names=snames[[roi]])   
       
       # Remove the baseline
-      lst.dat <- remove.baseline(lst.dat, baseline.tpts=-1:0)
+      lst.dat <- remove.baseline(lst.dat, baseline.tpts=-2:0)
       ## to check
       ## round(as.numeric(apply(lst.dat$trial[,3:5,4], 1, mean), 2))
       
@@ -134,7 +134,72 @@ all.diff.df <- ddply(all.df, .(roi.set, runtype, region, tpts), function(x) {
   agree <- max(table(sign(diff)))/length(diff)
   c(diff=as.numeric(res$estimate), tval=res$statistic, pval=res$p.value, agree=agree)
 })
-  
+# we can see what's significant (only allow pts after onset)
+subset(all.diff.df, tpts>0 & pval<0.05 & runtype=="Questions")[,-c(1:2)]
+
+#' ## Significance test
+#' 
+#' One way to do a significance test would be via permutation tests. I can 
+#' shuffle the condition membership and re-compute the mean condition ts.
+#+ sig-perms
+all.df <- ldply(rois, function(roi) {
+  ldply(runtypes, function(runtype) {
+    ldply(subjects, function(subject) {
+      # Load the data
+      # ret <- list(trial=matrix(trial x time x region), timing, ntpts)
+      lst.dat <- load.data(subject, runtype, roi, 
+                           basedir=file.path(base, "data/ts"), 
+                           prestim=5, poststim=19, 
+                           select.nodes=srois[[roi]], node.names=snames[[roi]])   
+      
+      # Remove the baseline
+      lst.dat <- remove.baseline(lst.dat, baseline.tpts=-2:0)
+      ## to check
+      ## round(as.numeric(apply(lst.dat$trial[,3:5,4], 1, mean), 2))
+      
+      # Loop through and get 100 permuted differences
+      perm.df <- ldply(1:10, function(iperm) {
+        # Get the mean time-series per condition via a smoothed fit
+        ave.df  <- smoothed.average.by.condition(lst.dat, new.tr=0.2, resample=T)
+        
+        # get the difference between the two condtions
+        diff.df <- ddply(ave.df, .(region, tpts), function(x) c(diff=diff(x$mean)))
+        
+        data.frame(perm=iperm, diff.df)
+      })
+      
+      # Return dataframe with additional information
+      cbind(data.frame(
+        roi.set = roi, 
+        runtype = runtype, 
+        subject = subject
+      ), perm.df)
+    }, .progress="text")
+  })
+})
+
+#' # Area under the Curve (AUC)
+#' 
+#' We want to look generally at the level of activity for the temporal response
+#' in these ROIs. This does require reading in ever
+#' 
+#+ auc
+library(caTools) # get trapz function
+auc.df <- ddply(all.df, .(runtype, subject, condition, region), function(x) {
+  c(auc=auc.hdr(x$mean, x$tpts))
+})
+sig.auc.df <- ddply(auc.df, .(runtype, region), function(x) {
+  res <- t.test(auc~condition, data=x, paired=T)
+  res2 <- wilcox.test(auc~condition, data=x, paired=T)
+  c(t=res$statistic, p=res$p.value, p2=res2$p.value)
+})
+subset(sig.auc.df, runtype=="Questions") ## woot only the vATL is significant
+sum.auc.df <- ddply(auc.df, .(runtype, region, condition), function(x) {
+  c(mean=mean(x$auc), sd=sd(x$auc))
+})
+summary(aov(auc~region*condition))
+#matrix(subset(sum.auc.df, runtype=="Questions")[,4], 2, 16)
+
 #' # Load and Visualize
 #' 
 #+ viz_setup
@@ -146,12 +211,13 @@ cols <- add.alpha(rep(cols, each=2), alpha=0.3)
 cols2 <- brewer.pal(8, "Dark2")[c(1,4,3)] # Questions, NoQuestions, and Overlap
 
 #+ viz_test
-#sdf <- subset(all.ave.df, roi.set=="postask" & runtype=="NoQuestions" & region=="vATL")
-#sdf <- subset(all.ave.df, roi.set=="probatlas" & runtype=="Questions" & region=="FFA")
+sdf <- subset(all.ave.df, roi.set=="probatlas" & runtype=="Questions" & region=="L aFus")
+sdf <- subset(all.ave.df, roi.set=="probatlas" & runtype=="Questions" & region=="L mFus")
+sdf <- subset(all.ave.df, roi.set=="probatlas" & runtype=="Questions" & region=="L vATL")
 #sdf <- subset(all.ave.df, roi.set=="postask")
-#ggplot(sdf, aes(x=tpts, y=response, color=condition)) + 
-#  geom_line() #+ 
-#  #facet_grid(runtype ~ region, scales="free")
+ggplot(sdf, aes(x=tpts, y=response, color=condition)) + 
+  geom_line() #+ 
+  #facet_grid(runtype ~ region, scales="free")
 
 #+ viz_theme
 fte_theme <- function() {
@@ -222,7 +288,7 @@ print(p)
 
 #' Plot each one individually
 #+ viz_plot_indiv, fig.width=6, fig.height=4
-outpath <- "~/Dropbox/Research/facemem/paper/figures/fig_03/es_plots"
+outpath <- file.path(base, "/paper/figures/fig_03/es_plots")
 d_ply(sdf, .(runtype, region), function(x) {
   #x <- dlply(sdf, .(runtype, region), function(x) x)[[7]]  
   cruntype <- as.character(x$runtype[1])
@@ -265,47 +331,3 @@ d_ply(sdf, .(runtype, region), function(x) {
   fname <- sprintf("%s/%s_%s.png", outpath, cruntype, cregion)
   ggsave(fname, p, width=5, height=2.5)
 })
-
-region.name <- "R vATL-post"
-runtype <- "Question"
-sdf  <- subset(all.ave.df, roi.set=="probatlas" & runtype==runtype & region==region.name)
-
-# Start up the basic plot
-p <- ggplot(sdf, aes(x=tpts, y=response))
-# Split the two lines up in order to show the shading between them
-split.sdf <- data.frame(
-  tpts = subset(sdf, condition=="bio")$tpts, 
-  bio  = subset(sdf, condition=="bio")$response, 
-  phys = subset(sdf, condition=="phys")$response, 
-  response = 0.05 # not sure why i need to do this...
-)
-# Only have shading for time-points with significant differences
-sdf2     <- subset(all.diff.df, roi.set=="probatlas" & runtype==runtype & region==region.name)
-sig.pts  <- which(sdf2$pval<0.05 & sdf2$tpts>(-1))
-# And only add the shading if there are any significant differences
-if (length(sig.pts) > 0) {
-  runs <- sle(sig.pts)
-  for (i in 1:length(runs$values)) {
-    start.i <- sig.pts[sig.pts==runs$values[i]]
-    end.i   <- start.i + runs$lengths[i] - 1
-    p <- p + 
-      geom_ribbon(data=split.sdf[start.i:end.i,], aes(ymin=phys, ymax=bio), 
-                  fill="grey", alpha=0.5)
-  }
-}
-# Plot everything else now
-p <- p +
-  geom_line(aes(color=condition), size=1.6) + 
-  scale_x_continuous(minor_breaks=0,breaks=seq(-4,20,4),limits=c(-5,20)) +
-  geom_vline(xintercept=0,size=0.9,colour="#535353",lty=2) +
-  geom_hline(yintercept=0,size=1.2,colour="#535353") +
-  ylab("Percent Signal Change") +
-  xlab("Time (s)") + 
-  #ggtitle("Some Random Data I Made") +
-  fte_theme()
-print(p)
-print(sig.pts)
-
-#+ viz-sig
-
-#' We also make individual plots for each for pages.

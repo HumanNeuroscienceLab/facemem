@@ -21,13 +21,15 @@ roi   <- "probatlas"
 srois <- c(
   3,  # R OFA
   1,  # R FFA
-  69, # R vATL
+  69, # R vATL (post)
+  32, # R vATL (ant)
   8,  # L OFA
   2,  # L FFA
-  62  # L vATL
+  62, # L vATL (post)
+  26  # L vATL (ant)
 )
-snames <- c("R OFA", "R FFA", "R vATL", 
-             "L OFA", "L FFA", "L vATL")
+snames <- c("R IOG", "R mFus", "R aFus", "R vATL", 
+            "L IOG", "L mFus", "L aFus", "L vATL")
 
 
 ###
@@ -43,7 +45,7 @@ all.df <- ldply(runtypes, function(runtype) {
                          select.nodes=srois, node.names=snames)
     
     # Remove the baseline
-    lst.dat <- remove.baseline(lst.dat, baseline.tpts=-1:0)
+    lst.dat <- remove.baseline(lst.dat, baseline.tpts=-2:0)
     ## to check
     ## round(as.numeric(apply(lst.dat$trial[,3:5,4], 1, mean), 2))
     
@@ -57,45 +59,6 @@ all.df <- ldply(runtypes, function(runtype) {
     ), ave.df)
   }, .progress="text")
 })
-
-
-## do some significance testing with the auc
-library(caTools)
-all.df2 <- ldply(runtypes, function(runtype) {
-  ldply(subjects, function(subject) {
-    # Load the data
-    # ret <- list(trial=matrix(trial x time x region), timing, ntpts)
-    lst.dat <- load.data(subject, runtype, roi, 
-                         basedir="~/Dropbox/Research/facemem/data/ts", 
-                         prestim=5, poststim=19, 
-                         select.nodes=srois, node.names=snames)
-    
-    # Remove the baseline
-    lst.dat <- remove.baseline(lst.dat, baseline.tpts=-1:0)
-    ## to check
-    ## round(as.numeric(apply(lst.dat$trial[,3:5,4], 1, mean), 2))
-    
-    # Get the mean time-series per condition via a smoothed fit
-    ave.df  <- smoothed.average.by.condition(lst.dat, new.tr=0.2)
-    
-    # Now get the area under the curve of the smoothed fit
-    auc.df <- ddply(ave.df, .(condition, region), function(x) {
-      c(auc=auc.hdr(x$mean, x$tpts))
-    })
-    
-    # Return dataframe with additional information
-    cbind(data.frame(
-      runtype = runtype, 
-      subject = subject
-    ), auc.df)
-  }, .progress="text")
-})
-sig.auc.df <- ddply(all.df2, .(runtype, region), function(x) {
-  res <- t.test(auc~condition, data=x, paired=T)
-  res2 <- wilcox.test(auc~condition, data=x, paired=T)
-  c(t=res$statistic, p=res$p.value, p2=res2$p.value)
-})
-sig.auc.df ## woot only the vATL is significant
 
 
 ###
@@ -224,6 +187,33 @@ ave.sres <- ddply(sres, .(runtype, region, condition), colwise(mean, .(height, p
 ave.sres[,4:5] <- round(ave.sres[,4:5], 2)
 subset(ave.sres, runtype=="Questions")
 sd.sres <- ddply(sres, .(runtype, region, condition), colwise(sd, .(height, peak)))
+## for plotting
+mat <- data.frame(
+  region=subset(ave.sres, runtype=="Questions" & condition=="bio")$region, 
+  bio=subset(ave.sres, runtype=="Questions" & condition=="bio")$peak,
+  phys=subset(ave.sres, runtype=="Questions" & condition=="phys")$peak, 
+  se.bio=subset(sd.sres, runtype=="Questions" & condition=="bio")$peak/sqrt(16),
+  se.phys=subset(sd.sres, runtype=="Questions" & condition=="phys")$peak/sqrt(16), 
+  sig=subset(sig.sres, runtype=="Questions")$p
+)
+write.table(mat, row.names=F, sep="\t", quote=F) # copy and paste into numbers
+
+# Can we test if we exclude the L aFus and L vATL will we find significant 
+# effects? No that isn't significant.
+t.test(peak~condition, paired=T, 
+       data=subset(sres, !(region %in% c("L aFus", "L vATL")) & runtype=="Questions"))
+
+# Get significance estimates for the onset latency
+## note didn't find anything that was significant
+tmp <- ddply(sres, .(runtype, region), function(x) {
+  bio <- subset(x, condition=="bio")$onset
+  phy <- subset(x, condition=="phys")$onset
+  inds <- !is.na(bio) | !is.na(phy)
+  y <- t.test(bio[inds], phy[inds], paired=T)
+  y2<- wilcox.test(bio[inds], phy[inds], paired=T)
+  c(t=y$statistic, p=y$p.value, p2=y2$p.value)
+})
+subset(tmp, runtype=="Questions")
 
 # tests between rois (nope, doesn't yield much)
 x1 <- subset(sres, runtype=="Questions" & region=="R vATL")$peak
