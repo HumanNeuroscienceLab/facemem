@@ -187,7 +187,11 @@ Let's visualize it again.
 # TODO
 ```
 
-# Directed Connectivity
+# Directed UnWeighted Connectivity
+
+## 
+
+# Directed Weighted Connectivity
 
 ## Subject-Level Directed Connectivity
 
