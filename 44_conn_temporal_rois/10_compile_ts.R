@@ -13,16 +13,28 @@ cat("setup\n")
 
 subjects <- as.character(as.matrix(read.table("../sublist_all.txt")))
 # We want to select a subset of the extract ROIs for our analyses
+# srois <- c(
+#   3,  # R OFA
+#   1,  # R FFA
+#   69, # R vATL
+#   8,  # L OFA
+#   2,  # L FFA
+#   62  # L vATL
+# )
+# snames  <- c("R OFA", "R FFA", "R vATL", 
+#              "L OFA", "L FFA", "L vATL")
 srois <- c(
   3,  # R OFA
   1,  # R FFA
-  69, # R vATL
+  69, # R vATL (post)
+  32, # R vATL (ant)
   8,  # L OFA
   2,  # L FFA
-  62  # L vATL
+  62, # L vATL (post)
+  26  # L vATL (ant)
 )
-snames  <- c("R OFA", "R FFA", "R vATL", 
-             "L OFA", "L FFA", "L vATL")
+snames <- c("R IOG", "R mFus", "R aFus", "R vATL", 
+             "L IOG", "L mFus", "L aFus", "L vATL")
 runtypes<- c("Questions", "NoQuestions")
 conds   <- c("bio", "phys")
 region  <- "prob_atlas_peaks_n146"

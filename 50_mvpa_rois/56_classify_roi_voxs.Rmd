@@ -1,0 +1,739 @@
+---
+title: "Classify FFA + vATL"
+author: "Zarrar Shehzad"
+date: "May 15, 2015"
+output: html_document
+---
+
+I will focus here only on the left FFA and left vATL ROIs. Each of these ROIs is taken from peaks in the probabilistic atlas. To allow for better separation between the FFA and vATL, I moved the vATL ROI anterioraly by 8mm. If anything this should make the vATL ROI center more in the anterior portion of the fusiform and overlap more with those voxels having a significant bio>phys condition difference.
+
+I will also focus my efforts here on the Questions runs. Can do another page with the Passive Viewing (NoQuestions).
+
+# Setup
+
+```{r setup}
+library(plyr)
+library(ggplot2)
+library(caret)
+library(glmnet)
+library(doMC)
+registerDoMC(cores=16)
+
+scriptdir <- "/mnt/nfs/psych/faceMemoryMRI/scripts/connpaper"
+setwd(file.path(scriptdir, "50_mvpa_rois"))
+
+#runtypes  <- c("Questions", "NoQuestions")
+runtypes  <- "Questions"
+conds     <- c("bio", "phys")
+subjects  <- as.character(as.matrix(read.table("../sublist_all.txt")))
+
+# ROIs
+srois <- c(
+  1, # L FFA
+  2 # L vATL
+)
+snames  <- c("L FFA", "L vATL")
+scols   <- tolower(sub(" ", ".", snames))
+sfnames <- tolower(sub(" ", "", snames))
+
+# Paths
+base <- "/mnt/nfs/psych/faceMemoryMRI"
+grpbase <- file.path(base, "analysis/groups")
+
+# Custom theme for ggplot
+fte_theme <- function(size.adj=0) {
+  library(grid)
+  # Colors
+  color.background = "#F0F0F0"
+  color.grid.major = "#D0D0D0"
+  color.axis.text = "#535353"
+  color.axis.title = "#535353"
+  color.title = "#3C3C3C"
+  
+  # Begin construction of chart
+  theme_bw() +
+    
+    # Set the entire chart region to a light gray color
+    theme(panel.background=element_rect(fill=color.background, color=color.background)) +
+    theme(plot.background=element_rect(fill=color.background, color=color.background)) +
+    theme(panel.border=element_rect(color=color.background)) +
+    
+    # Format the grid
+    theme(panel.grid.major=element_line(color=color.grid.major,size=.75)) +
+    theme(panel.grid.minor=element_blank()) +
+    theme(axis.ticks=element_blank()) +
+    
+    # Format the legend, but hide by default
+    theme(legend.position="none") +
+    theme(legend.background = element_rect(fill=color.background)) +
+    theme(legend.text = element_text(size=11,color=color.axis.title)) +
+    
+    # Set title and axis labels, and format these and tick marks
+    theme(plot.title=element_text(face="bold",color=color.title,size=24+size.adj,vjust=2)) + #hjust=-0.08
+    theme(axis.text.x=element_text(face="bold",size=17+size.adj,color=color.axis.text)) +
+    theme(axis.text.y=element_text(face="bold",size=17+size.adj,color=color.axis.text)) +
+    theme(axis.title.x=element_text(face="bold",size=18+size.adj,color=color.axis.title, vjust=-.5)) +
+    theme(axis.title.y=element_text(face="bold",size=18+size.adj,color=color.axis.title, vjust=1.5)) +
+    theme(strip.text=element_text(face="bold",size=21+size.adj,color=color.title)) +
+    
+    # Plot margins
+    theme(plot.margin = unit(c(1, 1, .7, .7), "cm"))
+}
+
+add.alpha <- function(col, alpha=1){
+  if(missing(col))
+    stop("Please provide a vector of colours.")
+  apply(sapply(col, col2rgb)/255, 2, 
+                     function(x) 
+                       rgb(x[1], x[2], x[3], alpha=alpha))  
+}
+
+# Color-blind friendly palette with grey:
+cbPalette <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
+
+# Colors from http://www.magesblog.com/2013/04/how-to-change-alpha-value-of-colours-in.html
+myColours = c(1, "steelblue", "#FFBB00", rgb(0.4, 0.2, 0.3))
+```
+
+# GLM Results
+
+## Background
+
+I first want to note what the univariate GLM results were in the FFA and vATL ROIs. For the group-level bio vs phys contrast, I will be taking the average z-stat value and the number of significant voxels in either direction (although there isn't anything for phys>bio at the group level). I should expect that the vATL has a more robust and more voxels that show a bio>phys effect.
+
+## Analysis
+
+### Load the Data
+
+```{r glm-setup}
+suppressMessages(library(niftir))
+library(RColorBrewer)
+
+# Path
+roifiles<- c(file.path(scriptdir, "rois/classify_lffa.nii.gz"), file.path(scriptdir, "rois/classify_lvatl.nii.gz"))
+grpdir <- file.path(grpbase, runtypes, sprintf("task/%s_task_smoother.mema", tolower(runtypes)))
+zfile  <- file.path(grpdir, "zstats_bio_gt_phys.nii.gz")
+
+# Read
+rois   <- sapply(roifiles, function(fn) read.mask(fn, NULL))
+rois   <- rois[,1] + 2*rois[,2]
+zstats <- read.mask(zfile, NULL)
+
+# Extract ROI data
+roidf <- ldply(srois, function(i) {
+  inds <- rois==i
+  data.frame(roi=snames[i], vox=1:sum(inds), zstat=zstats[inds])
+})
+
+# Colors for later
+cpal <- cbPalette[c(2,4)]
+#cpal <- brewer.pal(3, "Dark2")[2:3]
+cpal2<- cbPalette[c(7,6)]
+cset1 <- brewer.pal(9, "Set1")
+```
+
+### Number of Voxels in ROI
+
+Just a note that the FFA ended up having 4 more voxels than the vATL when applying a mask.
+
+```{r glm-roi}
+xs <- sapply(srois, function(i) sum(rois==i))
+names(xs) <- scols
+print(xs)
+```
+
+### Calculate Measures and Plot
+
+Below I get a plot of the distribution of the data via a histogram and then density plots. Some notes:
+
+  * The x-axis gives the group-level Zstat with +vals being bio>phys and -vals being phys>bio
+  * The dotted lines indicates level of significance with blue for phys>bio and red for bio>phys
+
+From the plots below, we can see
+
+  * The distribution for FFA is more focal than vATL
+  * There appear to be more significant voxels in the vATL and more of those with a larger significance value
+  * Not much is significantly different for the phys > bio
+  
+When looking at the results on the brain, it appears that a lot of the FFA results are towards the edge of the mask.
+Either at the anterior end (towards the vATL) or at the inferior end (towards the cerebellum).
+
+```{r glm-plot-dist}
+# Histogram
+ggplot(roidf, aes(x=zstat, fill=roi)) + 
+  geom_vline(xintercept=0, linetype=1, color="grey25") +
+  #geom_vline(xintercept=1.96, linetype=1, color=cset1[1]) +
+  #geom_vline(xintercept=-1.96, linetype=1, color=cset1[2]) + 
+  geom_histogram(binwidth=0.25) + 
+  facet_grid(roi ~ .) + 
+  xlab("Z-Statistic (Bio - Phys)") + 
+  ylab("Number of Voxels") +
+  fte_theme() + 
+  theme(strip.background = element_blank()) +
+  scale_fill_manual(values=cpal)
+# Density
+ggplot(roidf, aes(x=zstat, fill=roi, color=roi)) + 
+  geom_density() + 
+  geom_vline(xintercept=1.96, linetype=3, size=1.2, color=cpal2[1]) +
+  geom_vline(xintercept=-1.96, linetype=3, size=1.2, color=cpal2[2]) +
+  facet_grid(roi ~ .) + 
+  xlab("Z-Statistic (Bio - Phys)") + 
+  ylab("Number of Voxels") +
+  fte_theme() + 
+  scale_fill_manual(values=cpal) + 
+  scale_color_manual(values=cpal)
+ggplot(roidf, aes(x=zstat, color=roi)) + 
+  geom_density(size=2) + 
+  #geom_vline(xintercept=1.96, linetype=3, size=1.2, color=cpal2[1]) +
+  #geom_vline(xintercept=-1.96, linetype=3, size=1.2, color=cpal2[2]) +
+  geom_hline(yintercept=0, size=1.5, color="grey30") +
+  xlab("Z-Statistic (Bio - Phys)") + 
+  ylab("Density of Voxels") +
+  fte_theme() + 
+  scale_color_manual(values=cpal)
+```
+
+For the absolute zstats get the means and number significant at p<0.05 and p<0.1.
+
+```{r glm-measures}
+# Get Measures
+# for the absolute zstats get the mean and #sig
+glm.res <- ddply(roidf, .(roi), function(x) {
+  m <- mean(abs(x$zstat))
+  n2<- sum(abs(x$zstat)>1.96)
+  n1<- sum(abs(x$zstat)>1.645)
+  data.frame(roi=x$roi[1], mean=m, p.05=n2, p.10=n1)
+})
+print(glm.res)
+```
+
+
+# Pattern Classification - Individual Regions
+
+Now I want to see if the patterns in the L FFA and L vATL (in separate models) will significantly discriminate our two conditions.
+
+  * 
+  
+  
+```{r}
+# Note: I need to actually do a leave one out of the runs
+
+setwd(file.path(scriptdir, "50_mvpa_rois"))
+scandat <- read.csv("../data/scandat.csv")
+scandat <- subset(scandat, Onset>6 & RunType==runtypes, select=c("Subject", "Run", "Type"))
+head(scandat)
+
+# todo
+# x - lasso
+# x - cv via runs
+# x - save features
+
+# For saving the features, I have the problem that they are actually in subject-specific space
+# So it's a bit of a pain
+# However, for now I can just collect it all in a list.
+feat.wts <- list()
+lasso.df <- data.frame()
+runtype <- runtypes[1]
+for (subject in subjects) {
+  cat("\n==", subject, "==\n")
+  sdir    <- file.path(base, "analysis/subjects", subject, runtype)
+
+  # Read in all the roi and condition data
+  lst.dat <- llply(srois, function(iroi) {
+    ldply(conds, function(cond) {
+      tsfile  <- file.path(sdir, "ts", sprintf("bs_classify_%s_%s.1D", sfnames[iroi], cond))
+      dat     <- read.table(tsfile)
+      data.frame(lab=rep(cond,nrow(dat)), dat)
+    })
+  })
+  names(lst.dat) <- scols
+  
+  # The labels to predict
+  ylabs <- lst.dat[[1]]$lab
+  ys    <- 2-as.numeric(ylabs)
+  
+  # Read in the run information and check
+  sub.scandat <- ddply(subset(scandat, Subject==subject), .(Type), function(x) x)
+  sub.scandat$Ind <- 1:nrow(sub.scandat)
+  if (nrow(sub.scandat) != length(ylabs)) stop("nrow != len", nrow(sub.scandat), length(ylabs))
+  if (!all(ylabs==sub.scandat$Type)) stop("not all same")
+  
+  # Leave one run out (so 4-folds)
+  runs     <- sort(unique(sub.scandat$Run))
+  nruns    <- length(runs)
+  runFolds <- createMultiFolds(runs, k=nruns, times = 1)
+  folds    <- lapply(runFolds, function(x) {
+    which(sub.scandat$Run %in% x)
+  })
+  fitControl <- trainControl(
+    method = "cv",
+    number = 10, 
+    repeats = 1, 
+    index = folds, 
+    allowParallel = TRUE
+  )
+  
+  # Now loop through the rois and do the classification
+  for (iroi in srois) {
+    dat   <- lst.dat[[iroi]]
+    name  <- snames[iroi]
+    cat(name, "\n")
+
+    x     <- as.matrix(dat[,-1])
+    
+    # For GLMNet, get the range of lambdas this way
+    # for alphas with 0, 0.1, 0.5, and 1, I get the collection of 
+    # autodetermined lambdas
+    tmp <- glmnet(x, ylabs, family="binomial", nlambda=100, alpha=1)
+    lambdas <- tmp$lambda
+
+    # Tuning Grids
+    grids <-  list(
+      # alpha=1 is the lasso penalty and alpha=0 is the ridge penalty
+      # lambda the amount of regularization
+      glmnet=expand.grid(alpha = 1,
+                         lambda = lambdas)
+    )
+    
+    # Fit model
+    method <- "glmnet"
+    fit <- train(scale(x), ylabs, 
+                 method = method,
+                 trControl = fitControl, 
+                 tuneGrid = grids[[method]])
+    
+    # Get summary information
+    perf  <- getTrainPerf(fit)
+    tune  <- fit$bestTune
+    
+    # Get the feature weights
+    wts   <- varImp(fit, scale=F)$importance$Overall
+    nfeats<- sum(wts!=0)
+    
+    # Save
+    feat.wts[[subject]][[scols[iroi]]] <- wts
+    sdf <- data.frame(subject=subject, roi=name, 
+                     accuracy=perf$TrainAccuracy, kappa=perf$TrainKappa, 
+                     alpha=tune$alpha, lambda=tune$lambda, 
+                     n.features=nfeats)
+    lasso.df <- rbind(lasso.df, sdf)
+  }
+}
+
+# Note that it's interesting that before when I ran with less significant voxels
+# So at least anecdotaly based on my previous run having a smaller focused region
+# doesn't help (although admittedly in that case i didn't do a leave one run out)
+x1 <- t(matrix(lasso.df$accuracy, 2, 16))
+t.test(x1[,1], x1[,2], paired=T) # this is significant p < 0.02 with about 0.07 greater for the FFA
+colMeans(x1)
+
+# Effect of # of features used?
+x2 <- t(matrix(lasso.df$n.features, 2, 16))
+t.test(x2[,1], x2[,2], paired=T) # not significant but on average less features are used with the FFA
+colMeans(x2)
+## get the total number of features
+sapply(feat.wts, function(x) sapply(x, length))
+## fraction of features
+round(x2/t(sapply(feat.wts, function(x) sapply(x, length))), 2)
+colMeans(round(x2/t(sapply(feat.wts, function(x) sapply(x, length))), 2))
+
+# Now I want to the glm values of those features that were selected
+# DAMN! CUZ IT'S IN A DIFFERENT SPACE, THIS WON'T WORK
+#feat.wts$tb9226$l.ffa!=0
+mean(feat.wts$tb9226$l.ffa!=0)
+```
+
+Let's try and figure out the location of all the significant ROIs.
+
+  * We can save each ROI into the subject's folder
+  * We can actually also get the subject's GLM results and see the GLM values for that subject
+  * Then we can transform the features in that ROI to standard space
+  * And then average or sum those features together
+  * Then see the GLM values in standard space
+
+```{r}
+runtype <- runtypes[1]
+glm.lasso.df <- ldply(subjects, function(subject) {
+  cat("\n==", subject, "==\n")
+  sdir    <- file.path(base, "analysis/subjects", subject, runtype)
+  
+  cat("read in data\n")
+  
+  # Read in mask
+  maskfile<- file.path(sdir, "mask.nii.gz")
+  mask    <- read.mask(maskfile)
+  
+  # Read in the GLM results
+  glmfile <- file.path(sdir, "task/smoother_preproc_spmg1.reml/stats/zstat_bio_gt_phys.nii.gz")
+  glms    <- read.mask(glmfile, NULL)
+  
+  # Read in the ROIs
+  rois <- llply(srois, function(iroi) {
+    roifile <- file.path(sdir, "rois", sprintf("classify_%s.nii.gz", sfnames[iroi]))
+    read.mask(roifile)
+  })
+  names(rois) <- scols
+  
+  # Save the mean absolute GLM values and the mean of the percentiles
+  cat("calcs\n")
+  df <- ldply(srois, function(iroi) {
+    scol <- scols[iroi]
+    wts  <- feat.wts[[subject]][[scol]]
+    vals <- abs(glms[rois[[scol]]])
+    avals <- c(mean(vals[wts!=0]), mean(vals[wts==0]))
+    pvals <- c(mean(rank(vals)[wts!=0]/sum(rois[[scol]])), mean(rank(vals)[wts==0]/sum(rois[[scol]])))
+    nsigs <- c(mean(vals[wts!=0]>1.96), mean(vals[wts==0]>1.96))
+    ovals <- c(mean(vals), mean(vals))
+    nvals <- c(mean(vals>1.96), mean(vals>1.96))
+    
+    data.frame(roi=snames[iroi], type=c("features", "none.features"), overall=ovals, onval=nvals, ave=avals, perc=pvals, nsig=nsigs)
+  })
+  
+  # Get the values in each ROI corresponding to the features
+  #mean(glms[rois$l.ffa][feat.wts[[subject]]$l.ffa!=0])
+  #mean(glms[rois$l.ffa][feat.wts[[subject]]$l.ffa==0])
+  #mean(glms[rois$l.vatl][feat.wts[[subject]]$l.vatl!=0])
+  #mean(glms[rois$l.vatl][feat.wts[[subject]]$l.vatl==0])
+  ## i'm not sure how to visualize the above stuff. 
+  ## the point seems to be that there is a relationship with the GLM values
+  ## but it isn't a conclusive one
+  #sum(rois$l.ffa); sum(rois$l.vatl)
+  #rank(abs(glms[rois$l.ffa]))[feat.wts[[subject]]$l.ffa!=0] # this does suggest that it's choosing higher ranks!
+  #rank(abs(glms[rois$l.vatl]))[feat.wts[[subject]]$l.vatl!=0]/sum(rois$l.vatl)
+  #hist(rank(abs(glms[rois$l.ffa]))[feat.wts[[subject]]$l.ffa!=0]/sum(rois$l.ffa))
+  #hist(rank(abs(glms[rois$l.vatl]))[feat.wts[[subject]]$l.vatl!=0]/sum(rois$l.vatl))
+  
+  # Save the feature values
+#   cat("save features\n")
+#   hdr <- read.nifti.header(maskfile)
+#   for (iroi in srois) {
+#     # save in subject space
+#     odir <- file.path(sdir, "classify")
+#     if (!file.exists(odir)) dir.create(odir)
+#     ofile <- file.path(odir, sprintf("lasso_feats_%s.nii.gz", sfnames[iroi]))
+#     write.nifti(feat.wts[[subject]][[scols[iroi]]], hdr, rois[[scols[iroi]]], outfile=ofile, overwrite=T)
+#     # warp to standard space
+#     odir2 <- file.path(sdir, "classify", "reg_standard")
+#     if (!file.exists(odir2)) dir.create(odir2)
+#     ofile2 <- file.path(odir2, sprintf("lasso_feats_%s.nii.gz", sfnames[iroi]))
+#     cmd <- "gen_applywarp.rb --overwrite -i %s -r %s -w 'exfunc-to-standard' -o %s --interp nn"
+#     cmd <- sprintf(cmd, ofile, file.path(sdir, "reg"), ofile2)
+#     cat(cmd, "\n")
+#     system(cmd)
+#   }
+
+  data.frame(subject=subject, df)
+})
+
+# Get the average for plotting
+ddply(glm.lasso.df, .(roi, type), colwise(mean, .(ave, perc, nsig, overall, onval), na.rm=T))
+```
+
+## Correlations
+
+This is with similarity of connectivity patterns using the correlation. I find something similar here where the correlations between trials in the FFA are overall higher than the vATL. Of course, this means that the correlation between the trial types is also higher so it's harder to then say much.
+
+```{r}
+sim.df <- data.frame()
+runtype <- runtypes[1]
+for (subject in subjects) {
+  cat("\n==", subject, "==\n")
+  sdir    <- file.path(base, "analysis/subjects", subject, runtype)
+
+  # Read in all the roi and condition data
+  lst.dat <- llply(srois, function(iroi) {
+    ldply(conds, function(cond) {
+      tsfile  <- file.path(sdir, "ts", sprintf("bs_classify_%s_%s.1D", sfnames[iroi], cond))
+      dat     <- read.table(tsfile)
+      data.frame(lab=rep(cond,nrow(dat)), dat)
+    })
+  })
+  names(lst.dat) <- scols
+  
+  # The labels to predict
+  ylabs <- lst.dat[[1]]$lab
+  ys    <- 2-as.numeric(ylabs)
+  
+  # Now loop through the rois and do the similarity calculation
+  for (iroi in srois) {
+    dat   <- lst.dat[[iroi]]
+    name  <- snames[iroi]
+    cat(name, "\n")
+
+    x     <- as.matrix(dat[,-1])
+    
+    # Compute the similarity between patterns
+    cmat  <- cor(x)
+    
+    # Cache the mean within/between similarity
+    bbsim <- mean(cmat[ylabs=="bio",ylabs=="bio"][lower.tri(cmat[ylabs=="bio",ylabs=="bio"])])
+    ppsim <- mean(cmat[ylabs=="phys",ylabs=="phys"][lower.tri(cmat[ylabs=="phys",ylabs=="phys"])])
+    bpsim <- bsim <- mean(cmat[ylabs=="bio",ylabs=="phys"])
+    
+    # Save
+    sdf <- data.frame(subject=subject, roi=name, 
+                     bb=bbsim, pp=ppsim, bp=bpsim)
+    sim.df <- rbind(sim.df, sdf)
+  }
+}
+
+ddply(sim.df, .(roi), colwise(function(x) round(mean(x),2)))
+```
+
+
+
+
+## Grouping
+
+Ok so from the above analysis we can see that when looking at the ROIs individually, the FFA is on top with 71% accuracy while the vATL is at 64% accuracy!
+
+Now let's see if the combination will lead to considerable increase in accuracy and if the algorithm will want to keep features from both of the rois. Note that we will want to restrict analysis to those features that were kept in the above analyses.
+
+```{r group}
+feat.c.wts <- list()
+glasso1.df <- data.frame()
+runtype <- runtypes[1]
+for (subject in subjects) {
+  cat("\n==", subject, "==\n")
+  sdir    <- file.path(base, "analysis/subjects", subject, runtype)
+
+  # Read in all the roi and condition data
+  lst.dat <- llply(srois, function(iroi) {
+    ldply(conds, function(cond) {
+      tsfile  <- file.path(sdir, "ts", sprintf("bs_classify_%s_%s.1D", sfnames[iroi], cond))
+      dat     <- read.table(tsfile)
+      data.frame(lab=rep(cond,nrow(dat)), dat)
+    })
+  })
+  names(lst.dat) <- scols
+  
+  # The labels to predict
+  ylabs <- lst.dat[[1]]$lab
+  ys    <- 2-as.numeric(ylabs)
+  
+  # Read in the run information and check
+  sub.scandat <- ddply(subset(scandat, Subject==subject), .(Type), function(x) x)
+  sub.scandat$Ind <- 1:nrow(sub.scandat)
+  if (nrow(sub.scandat) != length(ylabs)) stop("nrow != len", nrow(sub.scandat), length(ylabs))
+  if (!all(ylabs==sub.scandat$Type)) stop("not all same")
+  
+  # Leave one run out (so 4-folds)
+  runs     <- sort(unique(sub.scandat$Run))
+  nruns    <- length(runs)
+  runFolds <- createMultiFolds(runs, k=nruns, times = 1)
+  folds    <- lapply(runFolds, function(x) {
+    which(sub.scandat$Run %in% x)
+  })
+  fitControl <- trainControl(
+    method = "cv",
+    number = 10, 
+    repeats = 1, 
+    index = folds, 
+    allowParallel = TRUE
+  )
+  
+  cat("classify\n")
+  
+  # Combine the data across the two regions
+  x1 <- as.matrix(lst.dat$l.ffa[,-1])[,feat.wts[[subject]]$l.ffa!=0]
+  x2 <- as.matrix(lst.dat$l.vatl[,-1])[,feat.wts[[subject]]$l.vatl!=0]
+  x  <- cbind(x1, x2)
+    
+  # For GLMNet, get the range of lambdas this way
+  # for alphas with 0, 0.1, 0.5, and 1, I get the collection of 
+  # autodetermined lambdas
+  tmp <- glmnet(x, ylabs, family="binomial", nlambda=100, alpha=1)
+  lambdas <- tmp$lambda
+
+  # Tuning Grids
+  grids <-  list(
+    # alpha=1 is the lasso penalty and alpha=0 is the ridge penalty
+    # lambda the amount of regularization
+    glmnet=expand.grid(alpha = 1,
+                       lambda = lambdas)
+  )
+  
+  # Fit model
+  method <- "glmnet"
+  fit <- train(scale(x), ylabs, 
+               method = method,
+               trControl = fitControl, 
+               tuneGrid = grids[[method]])
+  
+  # Get summary information
+  perf  <- getTrainPerf(fit)
+  tune  <- fit$bestTune
+  
+  # Get the feature weights
+  wts   <- varImp(fit, scale=F)$importance$Overall
+  pfeats<- mean(wts!=0)
+  nfeats<- sum(wts!=0)
+  
+  # Save
+  names(wts) <- rep(scols, c(sum(feat.wts[[subject]]$l.ffa!=0), sum(feat.wts[[subject]]$l.vatl!=0)))
+  feat.c.wts[[subject]][[scols[iroi]]] <- wts
+  sdf <- data.frame(subject=subject, roi=name, 
+                   accuracy=perf$TrainAccuracy, kappa=perf$TrainKappa, 
+                   alpha=tune$alpha, lambda=tune$lambda, 
+                   perc.features=pfeats, n.features=nfeats)
+  glasso1.df <- rbind(glasso1.df, sdf)
+}
+
+x1 <- t(matrix(lasso.df$accuracy, 2, 16))
+round(cbind(x1, glasso1.df$accuracy), 2)
+colMeans(cbind(x1, glasso1.df$accuracy))
+
+t.test(x[,1], glasso1.df$accuracy) # compare combo to ffa
+t.test(apply(x1, 1, max), glasso1.df$accuracy) # compare combo to best one
+```
+
+Above we find that the combination leads to a significant increase in the prediction accuracy. This suggests that unique variance in both regions can contribute towards improving the classification.
+
+One questions might be if one of the regions is be given preference and more voxels were being dropped in one case, then another. From the analysis below, it appears that there isn't a big ppreference and typically, voxels in both are being kept.
+
+```{r}
+c.selected <- laply(feat.c.wts, function(x) {
+  x <- x$l.vatl
+  labs <- factor(names(x), levels=c("l.ffa", "l.vatl"))
+  tapply(x, labs, function(xx) mean(xx!=0, na.rm=T))
+})
+c.selected[is.na(c.selected)] <- 0
+t.test(c.selected[,1], c.selected[,2], paired=T)
+
+c.selected2 <- laply(feat.c.wts, function(x) {
+  x <- x$l.vatl
+  labs <- factor(names(x), levels=c("l.ffa", "l.vatl"))
+  tapply(x, labs, function(xx) sum(xx!=0, na.rm=T))
+})
+```
+
+We could follow up the above stuff with a group lasso as another approach to see if both results can be kept in the same model.
+
+```{r group-lasso}
+
+```
+
+
+
+===
+
+Ok so finally we want to get to the interactinon effects, the last part of our journey. 
+
+```{r}
+#library(glinternet)
+#fit = glinternet(X, Y, numLevels, family="binomial")
+
+feat.cc.wts <- list()
+ilasso.df <- data.frame()
+runtype <- runtypes[1]
+for (subject in subjects[-6]) {
+  cat("\n==", subject, "==\n")
+  sdir    <- file.path(base, "analysis/subjects", subject, runtype)
+
+  # Read in all the roi and condition data
+  lst.dat <- llply(srois, function(iroi) {
+    ldply(conds, function(cond) {
+      tsfile  <- file.path(sdir, "ts", sprintf("bs_classify_%s_%s.1D", sfnames[iroi], cond))
+      dat     <- read.table(tsfile)
+      data.frame(lab=rep(cond,nrow(dat)), dat)
+    })
+  })
+  names(lst.dat) <- scols
+  
+  # The labels to predict
+  ylabs <- lst.dat[[1]]$lab
+  ys    <- 2-as.numeric(ylabs)
+  
+  # Read in the run information and check
+  sub.scandat <- ddply(subset(scandat, Subject==subject), .(Type), function(x) x)
+  sub.scandat$Ind <- 1:nrow(sub.scandat)
+  if (nrow(sub.scandat) != length(ylabs)) stop("nrow != len", nrow(sub.scandat), length(ylabs))
+  if (!all(ylabs==sub.scandat$Type)) stop("not all same")
+  
+  # Leave one run out (so 4-folds)
+  runs     <- sort(unique(sub.scandat$Run))
+  nruns    <- length(runs)
+  runFolds <- createMultiFolds(runs, k=nruns, times = 1)
+  folds    <- lapply(runFolds, function(x) {
+    which(sub.scandat$Run %in% x)
+  })
+  fitControl <- trainControl(
+    method = "cv",
+    number = 10, 
+    repeats = 1, 
+    index = folds, 
+    allowParallel = TRUE
+  )
+  
+  cat("classify\n")
+  
+  # Get the interaction between the two regions (only)
+  x1 <- as.matrix(lst.dat$l.ffa[,-1])[,feat.wts[[subject]]$l.ffa!=0,drop=F]
+  x2 <- as.matrix(lst.dat$l.vatl[,-1])[,feat.wts[[subject]]$l.vatl!=0,drop=F]
+  ## center
+  x1 <- scale(x1, center=T, scale=F)
+  x2 <- scale(x2, center=T, scale=F)
+  ## get interactions between the areas
+  x <- array(0, c(ncol(x1), ncol(x2), nrow(x1)))
+  for (i in 1:ncol(x1)) {
+    for (j in 1:ncol(x2)) {
+      x[i,j,] <- x1[,i]*x2[,j]
+    }
+  }
+  dim(x) <- c(prod(dim(x)[1:2]), dim(x)[3])
+  x <- t(x) # betas x all possible interactions
+  
+  # For GLMNet, get the range of lambdas this way
+  # for alphas with 0, 0.1, 0.5, and 1, I get the collection of 
+  # autodetermined lambdas
+  tmp <- glmnet(x, ylabs, family="binomial", nlambda=100, alpha=1)
+  lambdas <- tmp$lambda
+
+  # Tuning Grids
+  grids <-  list(
+    # alpha=1 is the lasso penalty and alpha=0 is the ridge penalty
+    # lambda the amount of regularization
+    glmnet=expand.grid(alpha = 1,
+                       lambda = lambdas)
+  )
+  
+  # Fit model
+  method <- "glmnet"
+  fit <- train(scale(x), ylabs, 
+               method = method,
+               trControl = fitControl, 
+               tuneGrid = grids[[method]])
+  
+  # Get summary information
+  perf  <- getTrainPerf(fit)
+  tune  <- fit$bestTune
+  
+  # Get the feature weights
+  wts   <- varImp(fit, scale=F)$importance$Overall
+  pfeats<- mean(wts!=0)
+  nfeats<- sum(wts!=0)
+  
+  # Save
+  #names(wts) <- rep(scols, c(sum(feat.wts[[subject]]$l.ffa!=0), sum(feat.wts[[subject]]$l.vatl!=0)))
+  feat.cc.wts[[subject]][[scols[iroi]]] <- wts
+  sdf <- data.frame(subject=subject, roi=name, 
+                   accuracy=perf$TrainAccuracy, kappa=perf$TrainKappa, 
+                   alpha=tune$alpha, lambda=tune$lambda, 
+                   perc.features=pfeats, n.features=nfeats)
+  ilasso.df <- rbind(ilasso.df, sdf)
+}
+
+```
+
+Basically the above just doesn't work. It appears that the interaction effect is fairly weak. Another issue might be that there are way too many predictors but too few observations.
+
+===
+
+
+```{r}
+# For the future if you want to do elastic net
+ 
+x <- t(matrix(res$accuracy, 2, 18))
+print(round(cbind(x, x[,1]-x[,2]), 2))
+colMeans(x)
+```
