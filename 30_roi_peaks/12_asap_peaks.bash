@@ -26,7 +26,7 @@ echo "Calculating peaks with different distances btw peaks"
 run "3dExtrema -data_thr 0.1 -sep_dist 4 -output ASAP_maps/facescene+facehouse_stat3_peaks_sep04.nii.gz -volume ASAP_maps/facescene+facehouse_stat3_fwhm2.nii.gz > ASAP_maps/facescene+facehouse_stat3_peaks_sep04.txt"
 run "3dExtrema -data_thr 0.1 -sep_dist 8 -output ASAP_maps/facescene+facehouse_stat3_peaks_sep08.nii.gz -volume ASAP_maps/facescene+facehouse_stat3_fwhm2.nii.gz > ASAP_maps/facescene+facehouse_stat3_peaks_sep08.txt"
 run "3dExtrema -data_thr 0.1 -sep_dist 12 -output ASAP_maps/facescene+facehouse_stat3_peaks_sep12.nii.gz -volume ASAP_maps/facescene+facehouse_stat3_fwhm2.nii.gz > ASAP_maps/facescene+facehouse_stat3_peaks_sep12.txt"
-run "3dExtrema -data_thr 0.1 -sep_dist 12 -output ASAP_maps/facescene+facehouse_stat3_peaks_sep16.nii.gz -volume ASAP_maps/facescene+facehouse_stat3_fwhm2.nii.gz > ASAP_maps/facescene+facehouse_stat3_peaks_sep16.txt"
+run "3dExtrema -data_thr 0.1 -sep_dist 16 -output ASAP_maps/facescene+facehouse_stat3_peaks_sep16.nii.gz -volume ASAP_maps/facescene+facehouse_stat3_fwhm2.nii.gz > ASAP_maps/facescene+facehouse_stat3_peaks_sep16.txt"
 
 echo "Generate ROIs with 4mm radius spheres for the peaks with 12mm distances"
 run "tail -n+9 ASAP_maps/facescene+facehouse_stat3_peaks_sep12.txt | head -n-2 | awk '{print -\$3,-\$4,\$5,\$1}' > ../face_gt_house+scene.txt" 

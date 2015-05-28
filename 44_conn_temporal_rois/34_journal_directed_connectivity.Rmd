@@ -21,8 +21,13 @@ library(igraph)
 
 We start by setting some variables.
 
+```{r, echo=FALSE}
+#base <- "~/Dropbox/Research/facemem/connpaper"
+base <- "/data/psych/faceMemoryMRI/scripts/connpaper"
+```
+
 ```{r setup, results='hold'}
-setwd("~/Dropbox/Research/facemem/connpaper")
+setwd(base)
 
 # Make sure to not have any progress when building
 prog <- "none"
@@ -33,14 +38,16 @@ subjects <- as.character(as.matrix(read.table("sublist_all.txt")))
 runtypes <- c("Questions", "NoQuestions")
 conds    <- c("bio", "phys")
 # We want to select a subset of the extract ROIs for our analyses
-snames   <- c("R OFA", "R FFA", "R vATL", 
-              "L OFA", "L FFA", "L vATL")
+snames <- c("R IOG", "R mFus", "R aFus", "R vATL", 
+             "L IOG", "L mFus", "L aFus", "L vATL")
+
+nrois <- length(snames)
 ```
 
 And then we load the data.
 
 ```{r load, results='hold'}
-setwd("~/Dropbox/Research/facemem/connpaper")
+setwd(base)
 
 # Load all the time-series
 cat("time-series\n")
@@ -97,12 +104,15 @@ Note that here we can't force the direction of the connections.
   * 1 = yes connection
 
 ```{r gaps-hetero}
+nrois <- length(snames)
+lh.inds <- 1:(nrois/2)
+rh.inds <- (nrois/2+1):nrois
 # 0 = no connection; 1 = yes connection
-fixed.conn.mat <- matrix(0, 6, 6, dimnames=list(roi=snames, roi=snames))
+fixed.conn.mat <- matrix(0, nrois, nrois, dimnames=list(roi=snames, roi=snames))
 # these are the right-hemisphere only connections
-fixed.conn.mat[1:3,1:3] <- 1
+fixed.conn.mat[lh.inds,lh.inds] <- 1
 # now the left-hemisphere connections
-fixed.conn.mat[4:6,4:6] <- 1
+fixed.conn.mat[rh.inds,rh.inds] <- 1
 # keep the diagonals out of this
 diag(fixed.conn.mat) <- 0
 
@@ -114,8 +124,8 @@ print(fixed.conn.mat)
 Let's add back the homotopic connections.
 
 ```{r gaps-homo}
-diag(fixed.conn.mat[1:3,4:6]) <- 1
-diag(fixed.conn.mat[4:6,1:3]) <- 1
+diag(fixed.conn.mat[lh.inds,rh.inds]) <- 1
+diag(fixed.conn.mat[rh.inds,lh.inds]) <- 1
 
 print(fixed.conn.mat)
 ```
@@ -168,7 +178,7 @@ same. We use the pcalg package with the skeleton function and the first two
 steps in the Peter Clark (PC) algorithm.
 
 ```{r ci-calc}
-setwd("~/Dropbox/Research/facemem/connpaper")
+setwd(base)
 source("44_conn_temporal_rois/undirected_functions/alg_pc.R")
 
 pMat  <- conn_pc_pvals(Z, fixedGaps=fixed.conn.mat==1)
@@ -176,7 +186,7 @@ aMat  <- (pMat < 0.05)*1 * fixed.conn.mat
 diag(aMat) <- 0
 dimnames(aMat) <- list(roi=snames, roi=snames)
 
-print(aMat)
+print(aMat) # note this procedure didn't actually remove anything though
 ```
 
 ### Results
@@ -187,7 +197,138 @@ Let's visualize it again.
 # TODO
 ```
 
-# Directed Connectivity
+# Directed UnWeighted Connectivity
+
+Let's get the overall direction of the connections. We use only the Questions run concatenated data here (or we could run for each condition).
+
+First we load the relevant functions. We will be using 5 different methods and taking the consensus direction across those methods for each connection. These approaches were highly ranked in the Ramsey paper. 
+
+```{r udconn-funs}
+setwd(base)
+source("44_conn_temporal_rois/directed_functions/lofs.R")
+source("44_conn_temporal_rois/directed_functions/pwling.R")
+source("44_conn_temporal_rois/directed_functions/patel.R")
+
+conn_skew <- function(gadj, sdat, rmat) {
+ # no skewness correction
+ res <- pwling(t(sdat), -3, S=gadj, to.scale=F, C=rmat, verbose=F)
+ res$dag
+}
+
+conn_rskew <- function(gadj, sdat, rmat) {
+ # no skewness correction
+ res <- pwling(t(sdat), -4, S=gadj, to.scale=F, C=rmat, verbose=F)
+ res$dag
+}
+
+conn_R3 <- function(gadj, sdat, rmat=NULL) {
+ dag <- lofs.r3(gadj, sdat, to.scale=F)
+ dag
+}
+
+conn_R4 <- function(gadj, sdat, rmat) {
+ res   <- lofs.r4(gadj, sdat, cordat=rmat, to.scale=F, verbose=F)
+ res$dag
+}
+
+conn_patel <- function(gadj, dat, rmat=NULL) {
+  res   <- patel.tau(dat, gadj, to.scale=F, verbose=F)
+  res$dag
+}
+```
+
+Let's do the calculations!
+
+```{r}
+#Z <- rbind(concat.scale.dat$Questions$bio, concat.scale.dat$Questions$phys)
+rmat.bio <- cor(concat.scale.dat$Questions$bio)
+rmat.phys<- cor(concat.scale.dat$Questions$phys)
+
+# Skew
+skews <- list(
+  bio=conn_skew(aMat, concat.scale.dat$Questions$bio, rmat.bio), 
+  phys=conn_skew(aMat, concat.scale.dat$Questions$phys, rmat.phys)
+)
+
+# RSkew
+rskews <- list(
+  bio=conn_rskew(aMat, concat.scale.dat$Questions$bio, rmat.bio), 
+  phys=conn_rskew(aMat, concat.scale.dat$Questions$phys, rmat.phys)
+)
+
+# R3
+r3s <- list(
+  bio=conn_R3(aMat, concat.scale.dat$Questions$bio, rmat.bio), 
+  phys=conn_R3(aMat, concat.scale.dat$Questions$phys, rmat.phys)
+)
+
+# R4
+r4s <- list(
+  bio=conn_R4(aMat, concat.scale.dat$Questions$bio, rmat.bio), 
+  phys=conn_R4(aMat, concat.scale.dat$Questions$phys, rmat.phys)
+)
+
+# Patel's Tau on concatenated data
+pats <- list(
+  bio=conn_patel(aMat, concat.scale.dat$Questions$bio, rmat.bio), 
+  phys=conn_patel(aMat, concat.scale.dat$Questions$phys, rmat.phys)
+)
+
+# Get the consensus
+consensus <- list(
+  bio = ((skews$bio + rskews$bio + r3s$bio + r4s$bio + pats$bio)>=3)*1, 
+  phys = ((skews$phys + rskews$phys + r3s$phys + r4s$phys + pats$phys)>=3)*1
+)
+```
+
+```{r udconn-plot}
+setwd(base)
+# Get the coordinates for the 6 ROIs
+coords <- as.matrix(read.table("44_conn_temporal_rois/z_coords.txt"))
+dimnames(coords) <- list(roi=snames, dim=c("x","y","z"))
+
+cols2 <- brewer.pal(8, "Dark2")[c(1,3,4)] # Questions, NoQuestions, and Overlap
+cols <- brewer.pal(3, "Set1") # Condition colors
+
+ri <- 1
+ci <- 2
+#for (ri in 1:2) {
+  for (ci in 1:2) {
+    old.mar <- par()$mar
+    #par(mar=c(0,0,2,0))
+    
+    mat  <- consensus[[ci]]
+    g    <- graph.adjacency(mat, mode="directed", weighted=T, diag=F)
+    
+    # Want extra curves for 1-3 or 4-6 (vATL <-> FFA)
+    curves <- apply(get.edges(g, E(g)), 1, function(x) {
+      if (all(x %in% c(1,3)) || all(x %in% c(4,6))) {
+        return(0.6)
+      } else {
+        return(0.25)
+      }
+    })
+    
+    plot.igraph(g, 
+                edge.width=E(g)$weight*2.5, 
+                edge.curved=curves, 
+                #edge.color=cols[ci], 
+                vertex.size=40,
+                vertex.color=cols2[ri], #"red",
+                vertex.frame.color="white", 
+                vertex.label.color = "white",
+                vertex.label.family = "sans", 
+                vertex.label.font = 2, 
+                vertex.label.cex = 1, 
+                #vertex.label.size = 20, 
+                layout=coords)#, 
+                #main=sprintf("%s : %s", runtypes[ri], conds[ci]))
+    par(mar=old.mar)
+  }
+#}
+```
+
+# Directed Weighted Connectivity
 
 ## Subject-Level Directed Connectivity
 
@@ -195,7 +336,7 @@ We calculate the directed connectivity weights with the R4 method for each
 subject.
 
 ```{r dconn-subj}
-setwd("~/Dropbox/Research/facemem/connpaper")
+setwd(base)
 source("44_conn_temporal_rois/directed_functions/lofs.R")
 
 conn_R4_raw <- function(gadj, sdat, rmat, ...) {
@@ -264,8 +405,8 @@ rownames(pres2) <- snames
 
 cat("Tstat\n")
 round(tres, 3)
-#cat("P-val for Tstat\n")
-#round(pres, 2)
+cat("P-val for Tstat\n")
+round(pres, 2)
 cat("Pval with wilcox test\n")
 round(pres2, 2)
 ```
@@ -322,8 +463,8 @@ rownames(pres2) <- snames
 
 cat("Tstat\n")
 round(tres, 3)
-#cat("P-val for Tstat\n")
-#round(pres, 2)
+cat("P-val for Tstat\n")
+round(pres, 2)
 cat("Pval with wilcox test\n")
 round(pres2, 2)
 ```
@@ -366,7 +507,7 @@ pval.dconn0 <- apply(dir.mats, c(1,2,4,5), function(x) {
   if (all(x==1) || all(x==0)) {
     return(0)
   } else {
-    return(wilcox.test(x)$p.value)
+    return(t.test(x)$p.value)
   }
 })
 
@@ -376,7 +517,7 @@ pval.dconn <- laply(1:2, function(ri) {
     if (all(x==1) || all(x==0)) {
       return(1)
     } else {
-      return(wilcox.test(x[1,], x[2,], paired=T)$p.value)
+      return(t.test(x[1,], x[2,], paired=T)$p.value)
     }
   })  
 })
@@ -390,7 +531,7 @@ as networks.
 
 #### Correlation Plots
 
-Xs here mean that connection wasn't significant;y different 
+Xs here mean that connection wasn't significantly different 
 
 ```{r grp-viz-corrplot, results='hold'}
 for (ri in 1:2) {
@@ -399,11 +540,19 @@ for (ri in 1:2) {
     tmp <- ave.dconn[ri,ci,,]
     ptmp <- pval.dconn[ri,,]
     cols <- rev(colorRampPalette(brewer.pal(10, "RdBu"))(20))
-    corrplot.mixed(tmp, lower="circle", upper="circle", diag='n', 
-                   outline=T, col=cols, tl.pos="lt", is.corr=F, # cl.lim=c(0,1), 
-                   cl.length=length(cols)/2+1, addgrid.col="grey", 
-                   title=sprintf("\n%s - %s\n", runtypes[ri], conds[ci]), 
-                   p.mat=ptmp, sig.level=0.1, mar=c(0,0,2,0))
+#     corrplot.mixed(tmp, lower="circle", upper="circle", diag='n', 
+#                    outline=T, col=cols, tl.pos="lt", is.corr=F, # cl.lim=c(0,1), 
+#                    cl.length=length(cols)/2+1, addgrid.col="grey", 
+#                    title=sprintf("\n%s - %s\n", runtypes[ri], conds[ci]), 
+#                    p.mat=ptmp, sig.level=0.1, mar=c(0,0,2,0))
+      # TODO: add a number one on top of this!
+      # also thinking of using a simpler black to white type of shading.
+      corrplot(tmp, method="shade", diag=F, 
+               outline=T, col=cols, tl.pos="lt", is.corr=F, # cl.lim=c(0,1), 
+               cl.length=length(cols)/2+1, addgrid.col="grey", 
+               title=sprintf("\n%s - %s\n", runtypes[ri], conds[ci]), 
+               p.mat=(tmp==0)*1, sig.level=0.5, insig='blank', mar=c(0,0,2,0))
+    corrRect(c(4,4), col="green", lwd=2)
   }
 }
 ```
@@ -413,7 +562,7 @@ for (ri in 1:2) {
 Let's read in the coordinates of the ROIs to use for vertex placement in plots.
 
 ```{r grp-viz-coords, results='hold'}
-setwd("~/Dropbox/Research/facemem/connpaper")
+setwd(base)
 # Get the coordinates for the 6 ROIs
 coords <- as.matrix(read.table("44_conn_temporal_rois/z_coords.txt"))
 dimnames(coords) <- list(roi=snames, dim=c("x","y","z"))
@@ -540,4 +689,46 @@ for (ri in 1:2) {
 }
 
 par(mar=old.mar)
+```
+
+
+
+```{r}
+#old.mar <- par()$mar
+#par(mar=c(0,0,2,0))
+#for (ri in 1:2) {
+ri<-1
+  pmat <- t(pval.dconn[ri,,])
+  mat  <- t(diff.dconn[ri,,])
+  mat  <- mat * (pmat<0.05)   # threshold matrix with p < 0.1
+  g    <- graph.adjacency(mat, mode="directed", weighted=T, diag=F)
+  
+  # Want extra curves for 1-3 or 4-6 (vATL <-> FFA)
+  curves <- apply(get.edges(g, E(g)), 1, function(x) {
+    if (all(x %in% c(1,4)) || all(x %in% c(4,6)) || all(x %in% c(8,6))) {
+      return(.8)
+    } else {
+      return(0.2)
+    }
+  })
+  # Edge color
+  ecolors <- cols[(E(g)$weight < 0)*1 + 1]
+  
+  plot.igraph(g, 
+              edge.width=E(g)$weight*4, 
+              #edge.label=round(E(g)$weight, 2), 
+              #edge.lty=linetypes, 
+              edge.curved=curves, 
+              edge.color=ecolors, 
+              vertex.size=42,
+              vertex.color=cols2[ri], #"red",
+              vertex.frame.color= "white",
+              vertex.label.color = "white",
+              vertex.label.family = "sans",
+              vertex.label.font = 2, 
+              vertex.label.cex = 1.2, 
+              layout=coords)#, 
+              #main=sprintf("%s : bio vs phys", runtypes[ri]))
+#par(mar=old.mar)
+
 ```

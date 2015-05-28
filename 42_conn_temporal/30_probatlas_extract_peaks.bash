@@ -40,6 +40,7 @@ conds="bio phys"
 
 function extract_peaks_ts() {
   run "cd $1"
+  run "3dROIstats -mask rois/${roiname}.nii.gz -quiet connectivity/task_residuals.reml/residuals.nii.gz > connectivity/task_residuals.reml/ts_${roiname}.1D"
   for cond in ${conds}; do
     run "3dROIstats -mask rois/${roiname}.nii.gz -quiet connectivity/task_residuals.reml/residuals_${cond}.nii.gz > connectivity/task_residuals.reml/ts_${roiname}_${cond}.1D"
   done

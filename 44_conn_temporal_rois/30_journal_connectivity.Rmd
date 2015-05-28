@@ -20,7 +20,8 @@ library(reshape)
 We start by setting some variables and loading in the data. Note that we have 6 ROIs.
 
 ```{r setup}
-setwd("~/Dropbox/Research/facemem/connpaper")
+#setwd("~/Dropbox/Research/facemem/connpaper")
+setwd("/mnt/nfs/psych/faceMemoryMRI/scripts/connpaper")
 
 # Make sure to not have any progress when building
 prog <- "none"
@@ -30,8 +31,8 @@ prog <- "none"
 subjects <- as.character(as.matrix(read.table("sublist_all.txt")))
 runtypes <- c("Questions", "NoQuestions")
 conds    <- c("bio", "phys")
-snames   <- c("R OFA", "R FFA", "R vATL", 
-              "L OFA", "L FFA", "L vATL")
+snames <- c("R IOG", "R mFus", "R aFus", "R vATL", 
+             "L IOG", "L mFus", "L aFus", "L vATL")
 
 load("data/ts_rois_ofa+ffa+vatl.rda")
 head(dat$Questions$bio$tb9226)
@@ -49,6 +50,8 @@ Here, we will compute the connectivity between every pair of ROIs.
 # rmats is 
 # 2 x 2 x 16 x 6 x 6
 # runtypes x conditions x subjects x rois x rois
+# flip rois around
+snames <- snames[c(5:8,1:4)] # so that left to right
 rmats <- laply(runtypes, function(runtype) {
   cat("Runtype:", runtype, "\n")
   laply(conds, function(cond) {
@@ -56,6 +59,7 @@ rmats <- laply(runtypes, function(runtype) {
     laply(subjects, function(subject) {
       # Compute correlation between ROI time-series
       ts.mat    <- dat[[runtype]][[cond]][[subject]]
+      ts.mat    <- ts.mat[,c(5:8,1:4)]
       r.mat     <- cor(ts.mat)
       return(r.mat)
     }, .progress=prog)
@@ -71,24 +75,46 @@ Then we convert the connectivity to z-values. This conversion will make the
 distribution of correlations more normal and will be used in any statistical 
 tests comparing the different conditions.
 
-```{r z-scores}
-# r2z <- function(r, n) {
-#   #atanh(r)*sqrt(n-3)
-#   atanh(r)
-# }
+```{r zfuns}
+## r => z
 r2t <- function(r, kappa) {
   t = r*sqrt((kappa-1)/(1-r*r))
   return(t) # df = kappa-1
 }
-r2z <- function(r, kappa) {
-  r <- as.matrix(r)
-  t <- r2t(r, kappa)
-  z <- matrix(0, nrow(r), ncol(r))
+t2z <- function(t, kappa) {
+  t <- as.matrix(t)
+  z <- matrix(0, nrow(t), ncol(t))
   z[t>0] <- qt(pt(t[t>0], kappa-1, lower.tail=F), Inf, lower.tail=F)
   z[t<0] <- qt(pt(t[t<0], kappa-1, lower.tail=T), Inf, lower.tail=T)
   z
 }
+r2z <- function(r, kappa) {
+  r <- as.matrix(r)
+  t <- r2t(r, kappa)
+  z <- t2z(t, kappa)
+  z
+}
+## z => r
+t2r <- function(t, df) {
+  r <- t/sqrt(t*t+df)
+  return(r) # kappa = df+1
+}
+z2t <- function(z, df) {
+  z <- as.matrix(z)
+  t <- matrix(0, nrow(z), ncol(z))
+  if (any(z>0))
+  t[z>0] <- qt(pt(z[z>0], Inf, lower.tail=F), df, lower.tail=F)
+  t[z<0] <- qt(pt(z[z<0], Inf, lower.tail=T), df, lower.tail=T)
+  t
+}
+z2r <- function(z, df) {
+  t <- z2t(z, df)
+  r <- t2r(t, df)
+  r
+}
+```
 
+```{r z-scores}
 zmats <- laply(runtypes, function(runtype) {
   cat("Runtype:", runtype, "\n")
   laply(conds, function(cond) {
@@ -96,6 +122,7 @@ zmats <- laply(runtypes, function(runtype) {
     laply(subjects, function(subject) {
       # Compute correlation between ROI time-series
       ts.mat    <- dat[[runtype]][[cond]][[subject]]
+      ts.mat    <- ts.mat[,c(5:8,1:4)]
       r.mat     <- cor(ts.mat)
       # Convert correlations to z-stats
       z.mat     <- r2z(r.mat, nrow(ts.mat))
@@ -113,8 +140,31 @@ dimnames(zmats) <- dimnames(rmats)
 We can now compute the average connectivity (collapsing across subjects).
 
 ```{r averages}
-ave.rmat <- apply(rmats, c(1,2,4,5), function(x) tanh(mean(atanh(x))))
-overall.ave.rmat <- apply(rmats, c(4,5), function(x) tanh(mean(atanh(x))))
+## first get the average length of the time-series so can convert back
+tslens <- laply(runtypes, function(runtype) {
+  cat("Runtype:", runtype, "\n")
+  laply(conds, function(cond) {
+    cat("- Condition:", cond, "\n")
+    laply(subjects, function(subject) {
+      ts.mat    <- dat[[runtype]][[cond]][[subject]]
+      nrow(ts.mat)
+    }, .progress=prog)
+  })
+})
+dimnames(tslens) <- list(runtype=runtypes, condition=conds, subject=subjects)
+tslens <- apply(tslens, 1:2, mean)
+tslen  <- mean(tslens)
+
+## average
+ave.rmat <- array(0, c(2,2,length(snames),length(snames)))
+for (ri in 1:length(runtypes)) {
+  for (ci in 1:length(conds)) {
+    ave.rmat[ri,ci,,] <- apply(zmats[ri,ci,,,], c(2,3), function(x) z2r(mean(x), tslens[ri,ci]-1))
+  }
+}
+overall.ave.rmat <- apply(zmats, c(4,5), function(x) z2r(mean(x), tslen))
+dimnames(ave.rmat) <- list(runtype=runtypes, condition=conds, roi=snames, roi=snames)
+dimnames(overall.ave.rmat) <- list(roi=snames, roi=snames)
 ```
 
 ### Average Connectivity Collapsed Across RunTypes and Conditions
@@ -154,14 +204,21 @@ for (ri in 1:2) {
                    outline=T, col=cols, tl.pos="lt", 
                    cl.lim=c(0,1), cl.length=length(cols)/2+1, addgrid.col="grey", 
                    mar=c(0,0,1,0), title=sprintf("%s - %s", runtypes[ri], conds[ci]))
-
+#     corrplot(ave.rmat[ri,ci,,], method="number", diag=F, 
+#              col=cols, type="lower", tl.pos='d', tl.srt=90, 
+#              cl.lim=c(0,1), cl.length=length(cols)/2+1, addgrid.col="grey", 
+#              mar=c(0,0,1,0), title=sprintf("%s - %s", runtypes[ri], conds[ci]))
+    
     n <- length(snames)
-    mat <- cbind(c(0,3), n - c(0,3), 
-                 c(3,6), n - c(3,6)) + 0.5
+    mat <- cbind(c(0,4), n - c(0,4), 
+                 c(4,7), n - c(4,7)) + 0.5
     rect(mat[1, 1], mat[1, 2], mat[1, 3], mat[1, 4], 
          border = brewer.pal(9,"Set1")[3], lwd = 3, lty=1)
     rect(mat[2, 1], mat[2, 2], mat[2, 3], mat[2, 4], 
          border = brewer.pal(9,"Set1")[4], lwd = 3, lty=1)
+
+    write.table(ave.rmat[ri,ci,,], quote=F, sep="\t", 
+            file=sprintf("figures/table_undir_conn/ave_conn_%s_%s.tab", runtypes[ri], conds[ci]))
   }
 }
 ```
@@ -185,12 +242,16 @@ for (ri in 1:2) {
                  cl.lim=rang, cl.length=length(cols)/2+1, addgrid.col="grey", 
                  mar=c(0,0,1,0), title=runtypes[ri])
   n <- length(snames)
-  mat <- cbind(c(0,3), n - c(0,3), 
-               c(3,6), n - c(3,6)) + 0.5
+  mat <- cbind(c(0,4), n - c(0,4), 
+               c(4,8), n - c(4,8)) + 0.5
   rect(mat[1, 1], mat[1, 2], mat[1, 3], mat[1, 4], 
        border = brewer.pal(9,"Set1")[3], lwd = 3, lty=1)
   rect(mat[2, 1], mat[2, 2], mat[2, 3], mat[2, 4], 
        border = brewer.pal(9,"Set1")[4], lwd = 3, lty=1)
+  
+  write.table(d, quote=F, sep="\t", 
+        file=sprintf("figures/table_undir_conn/ave_diff_conn_%s.tab", runtypes[ri]))
+
 }
 ```
 
@@ -219,6 +280,7 @@ pMats <- aaply(zmats, c(1,4,5), function(x) {
 })
 cat("Questions\n")
 round(pMats[1,,], 2)
+(pMats[1,,]<0.1 & pMats[1,,]>0)*1
 cat("No Questions\n")
 round(pMats[2,,], 2)
 ```
@@ -239,8 +301,30 @@ pMats <- aaply(zmats, c(1,4,5), function(x) {
 })
 cat("Questions\n")
 round(pMats[1,,], 2)
+write.table(pMats[1,,], quote=F, sep="\t", 
+      file=sprintf("figures/table_undir_conn/sig_pval_conn_%s.tab", runtypes[ri]))
 cat("No Questions\n")
 round(pMats[2,,], 2)
+
+
+tMats <- aaply(zmats, c(1,4,5), function(x) {
+  if (all(x==0)) {
+    return(0)
+  } else {
+    return(t.test(x[1,], x[2,], paired=T)$statistic)
+  }
+})
+cat("Questions\n")
+round(tMats[1,,], 2)
+tmp <- tMats[1,,]
+zMats <- matrix(0, nrow(tmp), ncol(tmp), dimnames=dimnames(tmp))
+zMats[tmp>0] <- qt(pt(tmp[tmp>0], 15, lower.tail=F), Inf, lower.tail=F)
+zMats[tmp<0] <- qt(pt(tmp[tmp<0], 15, lower.tail=T), Inf, lower.tail=T)
+write.table(zMats, quote=F, sep="\t", 
+      file=sprintf("figures/table_undir_conn/sig_diff_conn_%s.tab", runtypes[ri]))
+cat("No Questions\n")
+round(tMats[2,,], 2)
+
 ```
 
 #### Wilcox Test with r vals
@@ -266,6 +350,76 @@ cat("NoQuestions\n")
 round(pMats[2,,], 2)
 #kable(pMats[2,,], format="html", digits=2, caption="Passitve Viewing")
 ```
+
+
+# Mutual Information
+
+I want to try out mutual information as a connectivity measure.
+
+```{r mutual-info}
+library(entropy)
+# mimats is 
+# 2 x 2 x 16 x 6 x 6
+# runtypes x conditions x subjects x rois x rois
+function H = Entropy(y,binSize)
+    % Calculate the entropy for an integer value of y
+ 
+    
+    % Generate the histogram
+    [n xout] = hist(y, binSize);
+ 
+    % Normalize the area of the histogram to make it a pdf
+    n = n / sum(n);
+    b=xout(2)-xout(1);
+ 
+    % Calculate the entropy
+    indices = n ~= 0;
+    H = -sum(n(indices).*log2(n(indices)).*b);
+end
+
+mimats <- laply(runtypes, function(runtype) {
+  cat("Runtype:", runtype, "\n")
+  laply(conds, function(cond) {
+    cat("- Condition:", cond, "\n")
+    laply(subjects, function(subject) {
+      # Compute correlation between ROI time-series
+      ts.mat    <- dat[[runtype]][[cond]][[subject]]
+      r.mat     <- matrix(0, ncol(ts.mat), ncol(ts.mat))
+      for (i in 1:(ncol(ts.mat)-1)) {
+        for (j in (i+1):ncol(ts.mat)) {
+          # Bin estimation based on:
+          # http://xaphire.de/recipes/?p=376
+          x <- ts.mat[,i]; y <- ts.mat[,j]
+          y2d <- discretize2d(x, y, numBins1=round(max(range(x)/sd(x)*10)), numBins2=round(max(range(y)/sd(y)*10)))
+          #image(y2d)
+          H1 <- entropy.empirical(rowSums(y2d))
+          H2 <- entropy.empirical(colSums(y2d))
+          H12<- entropy.empirical(y2d)
+          mi <- (H1+H2-H12)/(H1+H2)
+          r.mat[j,i] = r.mat[i,j] = mi
+        }
+      }
+      return(r.mat)
+    }, .progress="text")
+  })
+})
+dimnames(mimats) <- list(runtype=runtypes, condition=conds, subject=subjects, 
+                        roi=snames, roi=snames)
+
+# Significance Test
+pMats <- aaply(mimats, c(1,4,5), function(x) {
+  if (all(x==1) || all(x==0)) {
+    return(0)
+  } else {
+    return(wilcox.test(x[1,], x[2,], paired=T)$p.value)
+  }
+})
+cat("Questions\n")
+round(pMats[1,,], 2)
+cat("NoQuestions\n")
+round(pMats[2,,], 2)
+```
+
 
 # Effect of # of Time-Points
 
