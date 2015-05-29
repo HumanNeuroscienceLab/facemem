@@ -156,8 +156,6 @@ pvals <- apply(perms, c(2,3), function(x) sum(x>=x[1])/length(x))
 # Then reshape to be matrix and big matrix
 pair.zmats      <- q.zmats[1,,,] - q.zmats[2,,,]
 dim(pair.zmats) <- c(dim(pair.zmats)[1], prod(dim(pair.zmats)[-1]))
-# apply the swapping of condition
-pair.zmats      <- sweep(pair.zmats, 1, shuffle.sign, FUN="*")
 # To big matrix
 pair.zmats      <- as.big.matrix(pair.zmats, shared=F)
 # Compute summary stats and then tvals
@@ -177,8 +175,6 @@ rm(pair.zmats)
 # Get the average between condtions
 ave.zmats      <- (q.zmats[1,,,] + q.zmats[2,,,])/2
 dim(ave.zmats) <- c(dim(ave.zmats)[1], prod(dim(ave.zmats)[-1]))
-# apply the swapping of condition
-ave.zmats      <- sweep(ave.zmats, 1, shuffle.sign, FUN="*")
 # To big matrix
 ave.zmats      <- as.big.matrix(ave.zmats, shared=F)
 # Compute summary stats and then tvals
@@ -265,13 +261,13 @@ for (ri in ris) {
   cat("...roi", ri, "\n")
   outfile <- file.path(soutdir, sprintf("zstats_bio_gt_phys_%04i.nii.gz", ri))
   voxs <- rois2voxelwise(pair.zvals[,ri], rois)
-  write.nifti(voxs, hdr, mask, outfile=outfile)
+  write.nifti(voxs, hdr, mask, outfile=outfile, overwrite=T)
 }
 for (ri in ris) {
   cat("...roi", ri, "\n")
   outfile <- file.path(soutdir, sprintf("zstats_bio+phys_%04i.nii.gz", ri))
   voxs <- rois2voxelwise(ave.zvals[,ri], rois)
-  write.nifti(voxs, hdr, mask, outfile=outfile)
+  write.nifti(voxs, hdr, mask, outfile=outfile, overwrite=T)
 }
 
 # Save the bootstrap results of the vATL rank
