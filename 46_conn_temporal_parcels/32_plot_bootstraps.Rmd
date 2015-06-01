@@ -1,0 +1,177 @@
+---
+title: "CWAS-SCA Bootstrap Results"
+author: "Zarrar"
+date: "May 29, 2015"
+output: html_document
+---
+
+# Background
+
+For each subject and each condition, I computed the connectivity between every pair of parcels (658) in the brain. Then across subjects, I computed the difference between the connectivity between conditions and calculated significance via a paired t-test. To summarize the results, at each parcel, I took the total number of connections between that parcel and every other parcel that were significant. I do this once for Bio < Phys contrast and another time for the Phys > Bio contrast. I found a region in the left vATL that had the largest number of connections that were significantly different between condtions.
+
+To get estimates of the robustness of the left vATL connectivity changes relative to other regions, I did a bootstrap analysis. I randomly took a set of 10 subjects from my total of 16 and re-ran the above analysis. The goal was to see (a) how often the left vATL was on top in terms of # of significant connections that differ between conditions and (b) the stability of the specific seed-based map of the vATL with every other parcel across bootstrap resamples.
+
+# Setup
+
+```{r packages}
+library(bigmemory)
+library(grid)
+library(ggplot2)
+library(RColorBrewer)
+```
+
+## Load the Data
+
+Let's load things up.
+
+```{r load}
+runtype   <- "Questions"
+region    <- "parcels_group_localizer_n0658"
+basedir   <- "/mnt/nfs/psych/faceMemoryMRI"
+grpdir    <- file.path(basedir, "analysis/groups")
+indir     <- file.path(grpdir, runtype, "cmaps", sprintf("ts_%s_bootstrap+perms.sca", region))
+
+vatl.ranks<- as.numeric(read.table(file.path(indir, "bootstrap_vatl_ranks.txt"))[,1])
+
+vatl.maps <- attach.big.matrix(file.path(indir, "bootstrap_vatl_maps.desc")) # regions x resamps
+vatl.maps <- as.matrix(vatl.maps)
+```
+
+## Plotting Theme
+
+```{r theme}
+fte_theme <- function() {
+  # Colors
+  color.background = "#F0F0F0"
+  color.grid.major = "#D0D0D0"
+  color.axis.text = "#535353"
+  color.axis.title = "#535353"
+  color.title = "#3C3C3C"
+  
+  # Begin construction of chart
+  theme_bw() +
+    
+  # Set the entire chart region to a light gray color
+  theme(panel.background=element_rect(fill=color.background, color=color.background)) +
+  theme(plot.background=element_rect(fill=color.background, color=color.background)) +
+  theme(panel.border=element_rect(color=color.background)) +
+  
+  # Format the grid
+  theme(panel.grid.major=element_line(color=color.grid.major,size=.75)) +
+  theme(panel.grid.minor=element_blank()) +
+  theme(axis.ticks=element_blank()) +
+  
+  # Format the legend, but hide by default
+  theme(legend.position="none") +
+  theme(legend.background = element_rect(fill=color.background)) +
+  theme(legend.text = element_text(size=11,color=color.axis.title)) +
+  
+  # Set title and axis labels, and format these and tick marks
+  theme(plot.title=element_text(face="bold",color=color.title,size=24,vjust=2)) + #hjust=-0.08
+  theme(axis.text.x=element_text(face="bold",size=17,color=color.axis.text)) +
+  theme(axis.text.y=element_text(face="bold",size=17,color=color.axis.text)) +
+  theme(axis.title.x=element_text(face="bold",size=18,color=color.axis.title, vjust=-.5)) +
+  theme(axis.title.y=element_text(face="bold",size=18,color=color.axis.title, vjust=1.5)) +
+  
+  # Plot margins
+  theme(plot.margin = unit(c(1, 1, .7, .7), "cm"))
+}
+
+cols <- brewer.pal(9, "Set1")
+cols2 <- brewer.pal(8, "Dark2")[c(1,4,6)] # Questions, NoQuestions, and Overlap
+```
+
+
+# Plots
+
+## Ranks
+
+```{r ranks}
+p <- ggplot(data.frame(x=vatl.ranks), aes(x=x)) +
+      geom_histogram(binwidth=5, fill=cols2[1]) + 
+      xlim(0,135) + 
+      xlab("Rank of vATL Parcel Connectivity") + ylab("Number of Bootstrap Samples") + 
+      geom_hline(yintercept=0,size=1.2,colour="#535353") +
+      fte_theme() + 
+      theme(axis.title.x=element_blank()) + 
+      theme(axis.title.y=element_blank())
+print(p)
+# TODO: save!  
+```
+
+## Correlation Maps
+
+```{r corr}
+# Compute the correlation between the connectivity maps
+cmat <- cor(vatl.maps, method="spearman")
+df.cmat <- data.frame(x=cmat[lower.tri(cmat)])
+
+# Plot
+p <- ggplot(df.cmat, aes(x=x)) +
+      geom_histogram(binwidth=0.02, fill=cols2[1]) + 
+      xlim(0,1) + 
+      xlab("Spearman Rho") + ylab("Number of Pairwise Bootstrap Samples") + 
+      geom_hline(yintercept=0,size=1.2,colour="#535353") +
+      fte_theme() + 
+      theme(axis.title.x=element_blank()) + 
+      theme(axis.title.y=element_blank())
+print(p)
+```
+
+```{r dice}
+# Compute the dice coefficient amongst the significant results
+dice <- function(a,b) (2*sum(a&b))/sum(a+b)
+dice.mat <- function(a, b=a, z=0) {
+    xa <- a > z; xb <- b > z
+    mat <- matrix(1, ncol(xa), ncol(xb))
+    inds <- expand.grid(list(a=1:ncol(xa), b=1:ncol(xb)))
+    for (ri in 1:nrow(inds)) {
+        i <- inds[ri,1]; j <- inds[ri,2]
+        mat[j,i] <- mat[i,j] <- dice(xa[,i], xb[,j])
+    }
+    mat
+}
+dmat <- dice.mat(vatl.maps, z=1.645)
+df.dmat <- data.frame(x=dmat[lower.tri(dmat)])
+
+# Plot
+p <- ggplot(df.dmat, aes(x=x)) +
+      geom_histogram(binwidth=0.05, fill=cols2[1]) + 
+      xlim(0,1) + 
+      xlab("Dice Coefficient") + ylab("Number of Pairwise Bootstrap Samples") + 
+      geom_hline(yintercept=0,size=1.2,colour="#535353") +
+      fte_theme() + 
+      theme(axis.title.x=element_blank()) + 
+      theme(axis.title.y=element_blank())
+print(p)
+```
+
+
+
+## Summary
+
+This will give me the means and standard deviations I need for reporting. 
+
+First the ranks
+
+```{r summary-rank, results='hold'}
+df <- data.frame(mean=mean(vatl.ranks), standard.deviation=sd(vatl.ranks))
+print(df)
+print(summary(vatl.ranks))
+```
+
+Second the correlation.
+
+```{r summary-corr, results='hold'}
+df <- data.frame(mean=mean(df.cmat$x), standard.deviation=sd(df.cmat$x))
+print(df)
+print(summary(df.cmat$x))
+```
+
+Third the dice.
+
+```{r summary-dice, results='hold'}
+df <- data.frame(mean=mean(df.dmat$x), standard.deviation=sd(df.dmat$x))
+print(df)
+print(summary(df.dmat$x))
+```
