@@ -15,6 +15,9 @@ library(RColorBrewer)
 library(knitr)
 library(ggplot2)
 library(igraph)
+
+library(doMC)
+registerDoMC(10)
 ```
 
 # Setup
@@ -210,15 +213,15 @@ source("44_conn_temporal_rois/directed_functions/pwling.R")
 source("44_conn_temporal_rois/directed_functions/patel.R")
 
 conn_skew <- function(gadj, sdat, rmat) {
- # no skewness correction
- res <- pwling(t(sdat), -3, S=gadj, to.scale=F, C=rmat, verbose=F)
- res$dag
+ # yes skewness correction
+ res <- pwling(t(sdat), 3, S=t(gadj), to.scale=F, C=rmat, verbose=F)
+ t(res$dag) # to go from i->j to j->i
 }
 
 conn_rskew <- function(gadj, sdat, rmat) {
- # no skewness correction
- res <- pwling(t(sdat), -4, S=gadj, to.scale=F, C=rmat, verbose=F)
- res$dag
+ # yes skewness correction
+ res <- pwling(t(sdat), 4, S=t(gadj), to.scale=F, C=rmat, verbose=F)
+ t(res$dag) # to go from i->j to j->i
 }
 
 conn_R3 <- function(gadj, sdat, rmat=NULL) {
@@ -227,7 +230,7 @@ conn_R3 <- function(gadj, sdat, rmat=NULL) {
 }
 
 conn_R4 <- function(gadj, sdat, rmat) {
- res   <- lofs.r4(gadj, sdat, cordat=rmat, to.scale=F, verbose=F)
+ res   <- lofs.r4(gadj, sdat, cordat=rmat, to.scale=F, verbose=F, parallel=T)
  res$dag
 }
 
@@ -275,6 +278,10 @@ pats <- list(
 )
 
 # Get the consensus
+consensus.wt <- list(
+  bio = skews$bio + rskews$bio + r3s$bio + r4s$bio + pats$bio, 
+  phys = skews$phys + rskews$phys + r3s$phys + r4s$phys + pats$phys
+)
 consensus <- list(
   bio = ((skews$bio + rskews$bio + r3s$bio + r4s$bio + pats$bio)>=3)*1, 
   phys = ((skews$phys + rskews$phys + r3s$phys + r4s$phys + pats$phys)>=3)*1
@@ -340,7 +347,7 @@ setwd(base)
 source("44_conn_temporal_rois/directed_functions/lofs.R")
 
 conn_R4_raw <- function(gadj, sdat, rmat, ...) {
-  res   <- lofs.r4(gadj, sdat, cordat=rmat, to.scale=F, ...)
+  res   <- lofs.r4(gadj, sdat, cordat=rmat, to.scale=F, parallel=T, ...)
   res$W
 }
 
@@ -526,8 +533,32 @@ dimnames(pval.dconn) <- list(runtype=runtypes, target=snames, seed=snames)
 
 ### Visualize
 
-We can visualize the connections now in two ways. First as corrplots and second 
+We can visualize the connections now in three ways. First as plain tables, second as corrplots and third
 as networks.
+
+#### Tables
+
+```{r grp-viz-tables, results='hold'}
+odir <- file.path(base, "tables/table_dir_conn")
+if (!file.exists(odir)) dir.create(odir)
+for (ri in 1:2) {
+  # bio, phys
+  for (ci in 1:2) {
+    #cat(sprintf("%s - %s\n", runtypes[ri], conds[ci]))
+    tmp <- ave.dconn[ri,ci,,]
+    round(tmp, 3)
+    write.table(tmp, file=file.path(odir, sprintf("ave_dconn_%s_%s.tab", runtypes[ri], conds[ci])))
+    ptmp <- pval.dconn0[ri,ci,,]
+    write.table(ptmp, file=file.path(odir, sprintf("sig_ave_dconn_%s_%s.tab", runtypes[ri], conds[ci])))
+  }
+  # difference
+  tmp <- diff.dconn[ri,,]
+  round(tmp, 3)
+  write.table(tmp, file=file.path(odir, sprintf("diff_dconn_%s.tab", runtypes[ri])))
+  ptmp <- pval.dconn[ri,,]
+  write.table(ptmp, file=file.path(odir, sprintf("sig_diff_dconn_%s.tab", runtypes[ri])))
+}
+```
 
 #### Correlation Plots
 
