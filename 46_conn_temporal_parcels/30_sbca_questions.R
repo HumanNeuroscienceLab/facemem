@@ -63,7 +63,7 @@ nregions <- dim(zmats)[4]
 #--- Bootstrap Analysis ---#
 
 # Also save the maps
-niters     <- 100
+niters     <- 500
 vatl.maps  <- big.matrix(nregions, niters, init=0, shared=T)
 vatl.ranks <- laply(1:niters, function(i) {
   if (!(i %% 10)) cat(i,".")
@@ -96,7 +96,7 @@ vatl.ranks <- laply(1:niters, function(i) {
   summary <- colSums(pair.zvals>1.96)
   ranking <- rank(summary)
   # Give back the vATL ROI rank
-  rank.pair[397,]
+  ranking[397]
 }, .parallel=T)
 vatl.ranks <- nregions - vatl.ranks + 1
 
